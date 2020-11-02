@@ -14,6 +14,7 @@ import matplotlib.image as mpimg
 import time
 from scipy import ndimage
 import scipy.misc
+from skimage.metrics import structural_similarity
 import pickle
 import threading
 from skimage.measure import compare_ssim
@@ -62,13 +63,14 @@ parser.add_argument('--resume', default='', type=str, required=True,
                     metavar='PATH', help='path to latest checkpoint (default: none)')
 parser.add_argument('--dataset', dest='dataset', default='VOT2018',
                     help='datasets')
+parser.add_argument('--object_lookup', dest='object_lookup', default='../../Uni/9.Semester/AP/class_list.json',
+                    help='object_lookup')
 
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Object Tracker")
-        # create the label that holds the image
-        # create a text label
+        # Variables for GUI creation 
         self.window_width = 1400
         self.window_height = 900
 
@@ -81,10 +83,6 @@ class App(QMainWindow):
         self.setFixedSize(self.window_width, self.window_height)
         self.image_label.move(20,50)
         
-        # variables needed for tracking
-        with open('../../Uni/9.Semester/AP/class_list.json') as json_file: 
-            self.lookup = {ImageColor.getcolor(k, "RGB"):v for k,v in json.load(json_file).items()}
-        
         self.object_buttons = []
         self.thrs = np.arange(0.40, 0.45, 0.05)
         self.display_iou=QtWidgets.QLabel(self)
@@ -94,7 +92,6 @@ class App(QMainWindow):
         openFile = QtWidgets.QAction("&Open File", self)
         openFile.setShortcut("Ctrl+O")
         openFile.setStatusTip('Open File')
-        #openFile.triggered.connect(self.file_open)
         openFile.triggered.connect(self.open_image)
 
         self.statusBar()
@@ -103,18 +100,21 @@ class App(QMainWindow):
         fileMenu.addAction(openFile)
         self.home()
         self.textLabel = QLabel('Evaluate A2D2')
-        # create a vertical box layout and add the two labels
         vbox = QVBoxLayout()
         vbox.addWidget(self.image_label)
         vbox.addWidget(self.textLabel)
-        #vbox.addWidget(run_btn)
         self.setLayout(vbox)
+        
+        # variables needed for tracking
         args = parser.parse_args()
+        with open(args.object_lookup) as json_file: 
+            self.lookup = {ImageColor.getcolor(k, "RGB"):v for k,v in json.load(json_file).items()}
         self.cfg = load_config(args)
         init_log('global', logging.INFO)
         self.use_annotation = True
         logger = logging.getLogger('global')
         logger.info(args)
+
         # setup model
         if args.arch == 'Custom':
             from experiments.siammask_sharp.custom import Custom
@@ -127,6 +127,7 @@ class App(QMainWindow):
         model.eval()
         device = torch.device('cuda' if (torch.cuda.is_available() and not args.cpu) else 'cpu')
         self.model = model.to(device)
+
         # setup dataset
         self.data = self.load_dataset(args.dataset)
 
@@ -140,27 +141,12 @@ class App(QMainWindow):
         extractAction.triggered.connect(self.close_application)
         self.show()
 
-
     def file_open(self):
         name = QtWidgets.QFileDialog.getOpenFileName(self, 'Open File')
         file = open(name,'r')
-
-        self.editor()
-
-        with file:
-            text = file.read()
-            self.textEdit.setText(text)
         
-
     def close_application(self):
-        choice = QtWidgets.QMessageBox.question(self, 'Extract!',
-                                            "Close?",
-                                            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-        if choice == QtWidgets.QMessageBox.Yes:
-            print("")
-            sys.exit()
-        else:
-            pass
+        sys.exit()
 
     def open_image(self):
         self.lock = threading.Lock()
@@ -212,6 +198,7 @@ class App(QMainWindow):
         return QPixmap.fromImage(p)
 
     def background_track_calculation(self, state, rgb_code, mask_enable=True, refine_enable=True, device='cpu'):
+        # TODO catch error of calucaltion interrupted
         stop_track_flag = False
         end_track_flag = False
         background_iterator = 0
@@ -226,19 +213,16 @@ class App(QMainWindow):
                 self.precalc_track[background_iterator]["iou"] = iou
                 self.precalc_track[background_iterator]["stop_track"] = stop_track_flag
                 self.precalc_track[background_iterator]["similarity"] = score
-            #print(self.precalc_states)
             background_iterator += 1
             if background_iterator+1 == len(self.camera):
                 end_track_flag = True
 
     def crop_minAreaRect(self, img, rect):
-
         # rotate img
         angle = rect[2]
         rows,cols = img.shape[0], img.shape[1]
         M = cv2.getRotationMatrix2D((cols/2,rows/2),angle,1)
         img_rot = cv2.warpAffine(img,M,(cols,rows))
-
         # rotate bounding box
         rect0 = (rect[0], rect[1], 0.0) 
         box = cv2.boxPoints(rect0)
@@ -253,6 +237,7 @@ class App(QMainWindow):
 
     def single_step_object_track(self, state, rgb_code, index, mask_enable=True, refine_enable=True, device='cpu'):
         im = cv2.imread(self.camera[index])
+        # prevent conflict in track
         self.lock.acquire()
         state = siamese_track(state, im, mask_enable, refine_enable, device=device)
         self.lock.release()
@@ -268,9 +253,8 @@ class App(QMainWindow):
         current_anno = np.array(Image.open(self.annotations[index]))
         current_all_instances_mask = np.logical_and.reduce(current_anno == rgb_code, axis = -1).astype(np.uint8)
         previous_all_instances_mask = np.logical_and.reduce(prev_anno == rgb_code, axis = -1).astype(np.uint8)
-        #np.set_printoptions(threshold=sys.maxsize)
-        label_im, nb_labels = ndimage.label(current_all_instances_mask)
-        prev_label_im, prev_nb_labels = ndimage.label(previous_all_instances_mask)
+        #label_im, nb_labels = ndimage.label(current_all_instances_mask)
+        #prev_label_im, prev_nb_labels = ndimage.label(previous_all_instances_mask)
         # first condition: If there is no overlap to the object then its a mismatch 
         predicted_mask = state["mask"]
         predicted_mask[predicted_mask>thrs] = 1
@@ -282,7 +266,8 @@ class App(QMainWindow):
             # compare images
             current_location = state['minAreaRect']
             current_im = im 
-            current_cropped_image = self.crop_minAreaRect(cv2.cvtColor(current_im, cv2.COLOR_BGR2GRAY), current_location)
+            #current_cropped_image = self.crop_minAreaRect(cv2.cvtColor(current_im, cv2.COLOR_BGR2GRAY), current_location)
+            current_cropped_image = self.crop_minAreaRect(current_im, current_location)
             #current_hash = imagehash.average_hash(Image.fromarray(current_cropped_image, 'RGB'))
             #current_thr_mask = state['mask'] > state['p'].seg_thr
             #current_im[:, :, 2] = (current_thr_mask > 0) * 255 + (current_thr_mask == 0) * current_im[:, :, 2]
@@ -290,17 +275,14 @@ class App(QMainWindow):
             prev_state = self.collect_states[-1]
             prev_location = prev_state['minAreaRect']
             prev_im = self.precalc_track[index-1]["im"]
-            prev_cropped_image = self.crop_minAreaRect(cv2.cvtColor(prev_im, cv2.COLOR_BGR2GRAY), prev_location)
+            #prev_cropped_image = self.crop_minAreaRect(cv2.cvtColor(prev_im, cv2.COLOR_BGR2GRAY), prev_location)
+            prev_cropped_image = self.crop_minAreaRect(prev_im, prev_location)
             #prev_hash = imagehash.average_hash(Image.fromarray(prev_cropped_image, 'RGB'))
 
-            print("hash")
             #print(current_hash-prev_hash)
             #prev_thr_mask = prev_state['mask'] > prev_state['p'].seg_thr
             #prev_im[:, :, 2] = (prev_thr_mask > 0) * 255 + (prev_thr_mask == 0) * prev_im[:, :, 2]
 
-            print("image sizes")
-            print(location)
-            print(current_im.shape)
             #print(self.crop_minAreaRect(current_im, state['minAreaRect']).shape)
             #cv2.polylines(im, [np.int0(location).reshape((-1, 1, 2))], True, (0, 255, 0), 3)
 
@@ -309,11 +291,14 @@ class App(QMainWindow):
             #print(current_im.shape)
             #current_pixel = current_im[predicted_mask > thrs]
             #prev_pixel = prev_im[prev_mask > thrs]
-            common_size = (150, 150,3)
-            prev_cropped_image= np.resize(prev_cropped_image,common_size)
-            current_cropped_image = np.resize(current_cropped_image,common_size)
+            common_size = (150, 150)
+            try:
+                prev_cropped_image= cv2.resize(prev_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
+                current_cropped_image = cv2.resize(current_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
 
-            score, diff = compare_ssim(prev_cropped_image, current_cropped_image, full=True, multichannel=True)
+                score, diff = structural_similarity(prev_cropped_image, current_cropped_image, full=True, multichannel=True)
+            except Exception as e:
+                score=1.0
         #print(diff)
 
         stop_track_flag = False
@@ -329,12 +314,14 @@ class App(QMainWindow):
             """
             #print("stop track")
             stop_track_flag = True
+        """
         if prev_nb_labels != nb_labels:
             l2 =   np.linalg.norm(prev_mask - state["mask"])
             #print("similarity: ",l2)
             if l2 < 10:
                 #print("low sim: stop track")
                 stop_track_flag = True
+        """
         return im, state, qt_img, iou, stop_track_flag, score
 
     def track_object(self, state, rgb_code, mask_enable=True, refine_enable=True, device='cpu'):
@@ -360,6 +347,9 @@ class App(QMainWindow):
                 self.display_stop_track.setGeometry(30, self.display_height+150, 250, 50)
                 self.display_stop_track.show()
 
+            # adjust threshold
+            if score < 0.35 and self.pic_index > 1:
+                print("STOP TRACK LOW SIM")
             #current_rgbs = np.unique(current_anno, axis=0)
             self.display_iou.clear()
             self.display_iou.setText("IoU: " +str(round(iou, 3)))
