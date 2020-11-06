@@ -85,6 +85,53 @@ def crop_minAreaRect(img, rect):
                         pts[1][0]:pts[2][0]]
         return img_crop
 
+def MultiBatchIouMeter(thrs, outputs, targets, rgb, end_tracks, start=None, end=None):
+    targets = np.array(targets)
+    outputs = np.array(outputs)
+
+    num_frame = targets.shape[0]
+
+    num_object = len(rgb)
+    res = np.zeros((num_object, len(thrs)), dtype=np.float32)
+
+    output_max_id = np.argmax(outputs, axis=0).astype('uint8')+1
+    outputs_max = np.max(outputs, axis=0)
+    for k, thr in enumerate(thrs):
+        output_thr = outputs_max > thr
+        for j in range(num_object):
+            #print(targets)
+            #print("targets ", targets)
+            #print("object_ids[j] ", object_ids[j])
+            #target_j = targets == object_ids[j]
+            target_j = [np.logical_and.reduce(target == rgb[j], axis = -1) for target in targets]
+            #if start is None:
+            #start_frame, end_frame = 1, num_frame - 1
+            start_frame = 0
+            end_frame = end_tracks[j]
+            #    start_frame, end_frame = start[str(object_ids[j])] + 1, end[str(object_ids[j])] - 1
+            iou = []
+            for i in range(start_frame, end_frame):
+                #print("score: ", output_thr[i] * output_max_id[i])
+                #print("index ", (j+1))
+                pred = (output_thr[i] * output_max_id[i]) == (j+1)
+                mask_sum = (pred == 1).astype(np.uint8) + (target_j[i] > 0).astype(np.uint8)
+                #print(target_j[i])
+                #print("ADD ", (np.logical_and.reduce(target_j[i] != np.array([0,0,0]), axis = -1)).astype(np.uint8))
+                #mask_sum = (pred == 1).astype(np.uint8) + (np.logical_and.reduce(target_j[i] != np.array([0,0,0]), axis = -1)).astype(np.uint8)
+                intxn = np.sum(mask_sum == 2)
+                union = np.sum(mask_sum > 0)
+                if union > 0:
+                    iou.append(intxn / union)
+                elif union == 0 and intxn == 0:
+                    iou.append(1)
+            avg = np.mean(iou)
+            #if np.isnan(avg):
+                #print(end_frame)
+                #print(rgb[j])
+                
+            res[j, k] = np.mean(iou)
+    return res
+
 def calc_semsec_for_scene(model, data, hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'): 
 
     with open('../../Uni/9.Semester/AP/class_list.json') as json_file: 
@@ -160,6 +207,7 @@ def calc_semsec_for_scene(model, data, hp, mask_enable=True, refine_enable=True,
                     if use_gold_crit:
                         if intersec == 0:
                             relevant_region = current_anno[check_mask ==1]
+                            shading_error = False
                             if not relevant_region.size == 0:
                                 predicted_classes = np.unique(relevant_region, axis=0)
                                 shading_error = False
@@ -167,10 +215,9 @@ def calc_semsec_for_scene(model, data, hp, mask_enable=True, refine_enable=True,
                                     predicted_colour = (int(predicted_class[0]), int(predicted_class[1]), int(predicted_class[2]))
                                     if lookup[rgb_tuple].strip("0123456789 ") in lookup[predicted_colour].strip("0123456789 "):
                                         shading_error = True
-
-                                if not shading_error:
-                                    end_track = camera_index
-                                    break
+                            if not shading_error:
+                                end_track = camera_index
+                                break
                     else:
                         if camera_index > start+1:
                             current_location = state['minAreaRect']
@@ -194,7 +241,6 @@ def calc_semsec_for_scene(model, data, hp, mask_enable=True, refine_enable=True,
                                     break
                         
                     collect_states.append(state)
-                #toc += cv2.getTickCount() - tic
                 if end >= camera_index >= start:
                     pred_masks[object_index, camera_index, :, :] = mask
                     #mask_dict[scene][rgb_tuple].append(mask)
@@ -212,9 +258,7 @@ def calc_semsec_for_scene(model, data, hp, mask_enable=True, refine_enable=True,
         stop_track_dict = pickle.load(open(save_output_dir + "/"+"stop_track_dict.pickle", "rb"))
 
         if len(annotations) == len(camera):
-            multi_mean_iou = MultiBatchIouMeter(thrs, pred_masks, color_array, rgb,end_tracks,
-                                                start=None,
-                                                end=None)
+            multi_mean_iou = MultiBatchIouMeter(thrs, pred_masks, color_array, rgb,end_tracks,start=None, end=None)
             for i, code in enumerate(rgb):
                 for j, thr in enumerate(thrs):
                     rgb_tuple = tuple(code)
@@ -229,7 +273,7 @@ def calc_semsec_for_scene(model, data, hp, mask_enable=True, refine_enable=True,
             for scene in iou_dict:
                 for obj in iou_dict[scene]:
                     object_ious[obj][0] +=1
-                    object_ious[obj][0] +=iou_dict[scene][obj]
+                    object_ious[obj][1] +=iou_dict[scene][obj]
 
             print("Current mean IoU: ")
             for obj in object_ious:
