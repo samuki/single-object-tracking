@@ -105,5 +105,6 @@ def main():
     tl1, tl3 = avg_track_length(st1, st3)
     print("len st1: ", tl1)
     print("len st3: ", tl3)
+
 if __name__ == "__main__":
     main()

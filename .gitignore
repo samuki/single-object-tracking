@@ -1,5 +1,9 @@
 # created files
 init_bb/
+*.pickle
+.profiling.txt.swp
+__pycache__/
 
 # VS Code
 .vscode/
+

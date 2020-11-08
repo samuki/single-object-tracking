@@ -51,6 +51,8 @@ from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt,QObject
 import sys
 import cv2
 
+# own imports
+from utility import *
 
 thrs = np.arange(0.40, 0.45, 0.05)
 
@@ -217,24 +219,6 @@ class App(QMainWindow):
             if background_iterator+1 == len(self.camera):
                 end_track_flag = True
 
-    def crop_minAreaRect(self, img, rect):
-        # rotate img
-        angle = rect[2]
-        rows,cols = img.shape[0], img.shape[1]
-        M = cv2.getRotationMatrix2D((cols/2,rows/2),angle,1)
-        img_rot = cv2.warpAffine(img,M,(cols,rows))
-        # rotate bounding box
-        rect0 = (rect[0], rect[1], 0.0) 
-        box = cv2.boxPoints(rect0)
-        pts = np.int0(cv2.transform(np.array([box]), M))[0]    
-        pts[pts < 0] = 0
-
-        # crop
-        img_crop = img_rot[pts[1][1]:pts[0][1], 
-                        pts[1][0]:pts[2][0]]
-
-        return img_crop
-
     def single_step_object_track(self, state, rgb_code, index, mask_enable=True, refine_enable=True, device='cpu'):
         im = cv2.imread(self.camera[index])
         # prevent conflict in track
@@ -267,7 +251,7 @@ class App(QMainWindow):
             current_location = state['minAreaRect']
             current_im = im 
             #current_cropped_image = self.crop_minAreaRect(cv2.cvtColor(current_im, cv2.COLOR_BGR2GRAY), current_location)
-            current_cropped_image = self.crop_minAreaRect(current_im, current_location)
+            current_cropped_image = crop_minAreaRect(current_im, current_location)
             #current_hash = imagehash.average_hash(Image.fromarray(current_cropped_image, 'RGB'))
             #current_thr_mask = state['mask'] > state['p'].seg_thr
             #current_im[:, :, 2] = (current_thr_mask > 0) * 255 + (current_thr_mask == 0) * current_im[:, :, 2]
@@ -276,7 +260,7 @@ class App(QMainWindow):
             prev_location = prev_state['minAreaRect']
             prev_im = self.precalc_track[index-1]["im"]
             #prev_cropped_image = self.crop_minAreaRect(cv2.cvtColor(prev_im, cv2.COLOR_BGR2GRAY), prev_location)
-            prev_cropped_image = self.crop_minAreaRect(prev_im, prev_location)
+            prev_cropped_image = crop_minAreaRect(prev_im, prev_location)
             #prev_hash = imagehash.average_hash(Image.fromarray(prev_cropped_image, 'RGB'))
 
             #print(current_hash-prev_hash)
