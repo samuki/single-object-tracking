@@ -250,31 +250,12 @@ class App(QMainWindow):
             # compare images
             current_location = state['minAreaRect']
             current_im = im 
-            #current_cropped_image = self.crop_minAreaRect(cv2.cvtColor(current_im, cv2.COLOR_BGR2GRAY), current_location)
             current_cropped_image = crop_minAreaRect(current_im, current_location)
-            #current_hash = imagehash.average_hash(Image.fromarray(current_cropped_image, 'RGB'))
-            #current_thr_mask = state['mask'] > state['p'].seg_thr
-            #current_im[:, :, 2] = (current_thr_mask > 0) * 255 + (current_thr_mask == 0) * current_im[:, :, 2]
-
             prev_state = self.collect_states[-1]
             prev_location = prev_state['minAreaRect']
             prev_im = self.precalc_track[index-1]["im"]
             #prev_cropped_image = self.crop_minAreaRect(cv2.cvtColor(prev_im, cv2.COLOR_BGR2GRAY), prev_location)
             prev_cropped_image = crop_minAreaRect(prev_im, prev_location)
-            #prev_hash = imagehash.average_hash(Image.fromarray(prev_cropped_image, 'RGB'))
-
-            #print(current_hash-prev_hash)
-            #prev_thr_mask = prev_state['mask'] > prev_state['p'].seg_thr
-            #prev_im[:, :, 2] = (prev_thr_mask > 0) * 255 + (prev_thr_mask == 0) * prev_im[:, :, 2]
-
-            #print(self.crop_minAreaRect(current_im, state['minAreaRect']).shape)
-            #cv2.polylines(im, [np.int0(location).reshape((-1, 1, 2))], True, (0, 255, 0), 3)
-
-            #prev_im = np.array(Image.open(self.camera[index -1]))
-            #current_im = np.array(Image.open(self.camera[index]))
-            #print(current_im.shape)
-            #current_pixel = current_im[predicted_mask > thrs]
-            #prev_pixel = prev_im[prev_mask > thrs]
             common_size = (150, 150)
             try:
                 prev_cropped_image= cv2.resize(prev_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
@@ -283,39 +264,17 @@ class App(QMainWindow):
                 score, diff = structural_similarity(prev_cropped_image, current_cropped_image, full=True, multichannel=True)
             except Exception as e:
                 score=1.0
-        #print(diff)
-
         stop_track_flag = False
         if intersec == 0:
             predicted_classes = np.unique(current_anno[predicted_mask == 1], axis=0)
-            """
-            no_car = False
-            for predicted_class in predicted_classes:
-                rgb_tuple = (int(predicted_class[0]), int(predicted_class[1]), int(predicted_class[2]))
-                if "car" in self.lookup[rgb_tuple]:
-                    no_car = True
-            if no_car:
-            """
-            #print("stop track")
             stop_track_flag = True
-        """
-        if prev_nb_labels != nb_labels:
-            l2 =   np.linalg.norm(prev_mask - state["mask"])
-            #print("similarity: ",l2)
-            if l2 < 10:
-                #print("low sim: stop track")
-                stop_track_flag = True
-        """
         return im, state, qt_img, iou, stop_track_flag, score
 
     def track_object(self, state, rgb_code, mask_enable=True, refine_enable=True, device='cpu'):
-        #time.sleep(2)
         self.next_btn.clicked.disconnect()
         self.pic_index += 1
         if self.pic_index <= self.end-1:  # tracking
-            #state, im = single_step_object_track(model, pic, state, hp)
             if self.pic_index in self.precalc_track:
-                print("loaded")
                 im = self.precalc_track[self.pic_index]["im"]
                 state = self.precalc_track[self.pic_index]["state"]
                 qt_img = self.precalc_track[self.pic_index]["qt_img"]
@@ -324,13 +283,11 @@ class App(QMainWindow):
                 score = self.precalc_track[self.pic_index]["similarity"]
             else:
                 im, state, qt_img, iou, stop_track_flag, score = self.single_step_object_track(state, rgb_code, self.pic_index) 
-            
             self.collect_states.append(state)
             if stop_track_flag:
                 self.display_stop_track.setText("Stop track!")
                 self.display_stop_track.setGeometry(30, self.display_height+150, 250, 50)
                 self.display_stop_track.show()
-
             # adjust threshold
             if score < 0.35 and self.pic_index > 1:
                 print("STOP TRACK LOW SIM")
@@ -386,12 +343,7 @@ class App(QMainWindow):
         next_width = 250
         next_height = 50
         self.next_btn.setGeometry(self.display_width-next_width-120, self.display_height+100, next_width, next_height)
-        #btn.setStyleSheet("background-color:rgb"+str(tuple(rgb)))
-        #self.new_btn.move(self.display_width, 300)
-        # create multiprocess
-        #pre_calc = Process(target=self.background_track_calculation, args=[state])
-        #norm_calc = Process(target=self.single_step_object_track, args=(state, rgb_code,))
-        #self.next_btn.clicked.connect(lambda: pre_calc.start())
+
         pre_calc_thread = threading.Thread(target=self.background_track_calculation, name="pre_calc", args=[state, rgb_code])
         self.next_btn.clicked.connect(lambda: pre_calc_thread.start())
         self.next_btn.clicked.connect(lambda: self.track_object(state, rgb_code))
@@ -481,7 +433,6 @@ def main():
     #model_path = "experiments/siammask_sharp/SiamMask_DAVIS.pth"
     #config_path = "experiments/siammask_sharp/config_davis.json"
     global args, logger, v_id
-
     app = QApplication([])
     a = App()
     a.show()

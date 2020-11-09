@@ -20,6 +20,21 @@ def compute_precision_recall(st1, st2):
     recall = true_positives/(true_positives+false_negatives)
     return precision, recall
 
+def convert_kitti_dict(st1, st2):
+    for scene in st1: 
+        for obj in st1[scene]:
+            if isinstance(st1[scene][obj], list):
+                if st1[scene][obj] == []:
+                    st1[scene][obj] = 9000
+                else:
+                    st1[scene][obj] = st1[scene][obj][0]
+                if st2[scene][obj] == []:
+                    st2[scene][obj] = 9000
+                else:
+                    st2[scene][obj] = st2[scene][obj][0]
+    return st1, st2
+
+
 def compute_object_wise_precision_recall(st1, st2):
     object_dict = {}
     for scene in st1: 
@@ -82,7 +97,7 @@ def main():
     precision, recall = compute_precision_recall(st1, st2)
     print("Precision: ", precision)
     print("Recall: ", recall)
-
+    """
     object_dict = compute_object_wise_precision_recall(st1, st2)
     for obj in object_dict:
         if object_dict[obj]["tp"] != 0:
@@ -92,7 +107,7 @@ def main():
             print(lookup[obj], " recall: ", obj_recall)
         else:
             print(lookup[obj], " no true positives")
-
+    """
     iou_dict1 =  pickle.load(open(dir1+"iou_dict.pickle", "rb"))
     iou_dict2 =  pickle.load(open(dir2+"iou_dict.pickle", "rb"))
     iou_dict3 = pickle.load(open(dir3+"iou_dict.pickle", "rb"))
@@ -103,8 +118,17 @@ def main():
     #print("len st2: ", sum(track_length_st2)/len(track_length_st2))
 
     tl1, tl3 = avg_track_length(st1, st3)
-    print("len st1: ", tl1)
-    print("len st3: ", tl3)
+    #print("len st1: ", tl1)
+    #print("len st3: ", tl3)
+
+    kitti_st1 = pickle.load(open("gold_stop_track_dict3.pickle", "rb"))
+    kitti_st2 = pickle.load(open("pred_stop_track_dict3.pickle", "rb"))
+    kitti_st1, kitti_st2 = convert_kitti_dict(kitti_st1, kitti_st2)
+    precision, recall = compute_precision_recall(kitti_st1, kitti_st2)
+    print("Precision: ", precision)
+    print("Recall: ", recall)
+    
+
 
 if __name__ == "__main__":
     main()

@@ -4,6 +4,7 @@ init_bb/
 .profiling.txt.swp
 __pycache__/
 profiling.txt 
+pickle_files
 
 # VS Code
 .vscode/
