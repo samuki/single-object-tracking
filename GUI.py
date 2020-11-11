@@ -204,9 +204,11 @@ class App(QMainWindow):
         stop_track_flag = False
         end_track_flag = False
         background_iterator = 0
-        while end_track_flag == False:
+        while end_track_flag == False and np.array_equal(self.current_track, rgb_code):
             if background_iterator >= 1:
+                #self.lock.acquire()
                 im, state, qt_img, iou, stop_track_flag, score = self.single_step_object_track(state, rgb_code, background_iterator)
+                #self.lock.release()
                 # collect 
                 self.precalc_track[background_iterator] = {}
                 self.precalc_track[background_iterator]["im"] = im
@@ -222,9 +224,7 @@ class App(QMainWindow):
     def single_step_object_track(self, state, rgb_code, index, mask_enable=True, refine_enable=True, device='cpu'):
         im = cv2.imread(self.camera[index])
         # prevent conflict in track
-        self.lock.acquire()
         state = siamese_track(state, im, mask_enable, refine_enable, device=device)
-        self.lock.release()
         location = state['ploygon'].flatten()
         new_mask = state['mask'] > state['p'].seg_thr
         #self.collect_averages.append(average_object_confidence)
@@ -237,37 +237,46 @@ class App(QMainWindow):
         current_anno = np.array(Image.open(self.annotations[index]))
         current_all_instances_mask = np.logical_and.reduce(current_anno == rgb_code, axis = -1).astype(np.uint8)
         previous_all_instances_mask = np.logical_and.reduce(prev_anno == rgb_code, axis = -1).astype(np.uint8)
-        #label_im, nb_labels = ndimage.label(current_all_instances_mask)
-        #prev_label_im, prev_nb_labels = ndimage.label(previous_all_instances_mask)
-        # first condition: If there is no overlap to the object then its a mismatch 
         predicted_mask = state["mask"]
         predicted_mask[predicted_mask>thrs] = 1
         predicted_mask[predicted_mask<=thrs] = 0 
         mask_sum = predicted_mask + current_all_instances_mask
         intersec = np.sum(mask_sum[mask_sum==2])
-        score = 0
+        score = 1
+        stop_track_flag = False
+        # calculate stop track: currently broken 
+        """
         if index >1:
             # compare images
             current_location = state['minAreaRect']
-            current_im = im 
-            current_cropped_image = crop_minAreaRect(current_im, current_location)
             prev_state = self.collect_states[-1]
             prev_location = prev_state['minAreaRect']
-            prev_im = self.precalc_track[index-1]["im"]
-            #prev_cropped_image = self.crop_minAreaRect(cv2.cvtColor(prev_im, cv2.COLOR_BGR2GRAY), prev_location)
-            prev_cropped_image = crop_minAreaRect(prev_im, prev_location)
-            common_size = (150, 150)
-            try:
-                prev_cropped_image= cv2.resize(prev_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
-                current_cropped_image = cv2.resize(current_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
+            if len(current_location) == len(prev_location) == 3: 
+                current_im = im 
+                current_cropped_image = crop_minAreaRect(current_im, current_location)
+                prev_im = self.precalc_track[index-1]["im"]
+                #prev_cropped_image = self.crop_minAreaRect(cv2.cvtColor(prev_im, cv2.COLOR_BGR2GRAY), prev_location)
+                prev_cropped_image = crop_minAreaRect(prev_im, prev_location)
+                common_size = (150, 150)
+                try:
+                    prev_cropped_image= cv2.resize(prev_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
+                    current_cropped_image = cv2.resize(current_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
 
-                score, diff = structural_similarity(prev_cropped_image, current_cropped_image, full=True, multichannel=True)
-            except Exception as e:
-                score=1.0
-        stop_track_flag = False
-        if intersec == 0:
-            predicted_classes = np.unique(current_anno[predicted_mask == 1], axis=0)
-            stop_track_flag = True
+                    score, diff = structural_similarity(prev_cropped_image, current_cropped_image, full=True, multichannel=True)
+                except Exception as e:
+                    score=1.0
+            stop_track_flag = False
+            if intersec == 0:
+                predicted_classes = np.unique(current_anno[predicted_mask == 1], axis=0)
+                stop_track_flag = True
+        """
+        self.precalc_track[index] = {}
+        self.precalc_track[index]["im"] = im
+        self.precalc_track[index]["state"] = state
+        self.precalc_track[index]["qt_img"] = qt_img
+        self.precalc_track[index]["iou"] = iou
+        self.precalc_track[index]["stop_track"] = stop_track_flag
+        self.precalc_track[index]["similarity"] = score
         return im, state, qt_img, iou, stop_track_flag, score
 
     def track_object(self, state, rgb_code, mask_enable=True, refine_enable=True, device='cpu'):
@@ -282,15 +291,17 @@ class App(QMainWindow):
                 stop_track_flag = self.precalc_track[self.pic_index]["stop_track"]
                 score = self.precalc_track[self.pic_index]["similarity"]
             else:
+                #self.lock.acquire()
                 im, state, qt_img, iou, stop_track_flag, score = self.single_step_object_track(state, rgb_code, self.pic_index) 
+                #self.lock.release()
             self.collect_states.append(state)
             if stop_track_flag:
                 self.display_stop_track.setText("Stop track!")
                 self.display_stop_track.setGeometry(30, self.display_height+150, 250, 50)
                 self.display_stop_track.show()
             # adjust threshold
-            if score < 0.35 and self.pic_index > 1:
-                print("STOP TRACK LOW SIM")
+            #if score < 0.35 and self.pic_index > 1:
+                #print("STOP TRACK LOW SIM")
             #current_rgbs = np.unique(current_anno, axis=0)
             self.display_iou.clear()
             self.display_iou.setText("IoU: " +str(round(iou, 3)))
@@ -316,7 +327,7 @@ class App(QMainWindow):
         self.display_similarity.clear()
         self.display_iou.clear()
         self.display_stop_track.clear()
-
+        self.current_track = rgb_code
         # self.collect_averages = []
         scene = self.split_path[-4]
         self.start = self.data[scene]['camera'].index(self.path)

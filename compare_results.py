@@ -16,8 +16,12 @@ def compute_precision_recall(st1, st2):
                 false_positives+=1
             else: 
                 true_positives+=1
-    precision = true_positives/(true_positives+false_positives)
-    recall = true_positives/(true_positives+false_negatives)
+    if true_positives == 0:
+        precision = 0 
+        recall = 0
+    else:
+        precision = true_positives/(true_positives+false_positives)
+        recall = true_positives/(true_positives+false_negatives)
     return precision, recall
 
 def convert_kitti_dict(st1, st2):
@@ -95,8 +99,8 @@ def main():
     st2 = pickle.load(open(dir2+"stop_track_dict.pickle", "rb"))
     st3 = pickle.load(open(dir3+"stop_track_dict.pickle", "rb"))
     precision, recall = compute_precision_recall(st1, st2)
-    print("Precision: ", precision)
-    print("Recall: ", recall)
+    #print("Precision: ", precision)
+    #print("Recall: ", recall)
     """
     object_dict = compute_object_wise_precision_recall(st1, st2)
     for obj in object_dict:
@@ -112,8 +116,8 @@ def main():
     iou_dict2 =  pickle.load(open(dir2+"iou_dict.pickle", "rb"))
     iou_dict3 = pickle.load(open(dir3+"iou_dict.pickle", "rb"))
     #compare_iou(iou_dict1, iou_dict2, lookup)
-    compare_iou(iou_dict1,convert_iou_object_dict(iou_dict3), lookup)
-    tl1, tl2 = avg_track_length(st1, st2)
+    #compare_iou(iou_dict1,convert_iou_object_dict(iou_dict3), lookup)
+    #tl1, tl2 = avg_track_length(st1, st2)
     #print("len st1: ", sum(track_length_st1)/len(track_length_st1))
     #print("len st2: ", sum(track_length_st2)/len(track_length_st2))
 
@@ -121,8 +125,8 @@ def main():
     #print("len st1: ", tl1)
     #print("len st3: ", tl3)
 
-    kitti_st1 = pickle.load(open("gold_stop_track_dict3.pickle", "rb"))
-    kitti_st2 = pickle.load(open("pred_stop_track_dict3.pickle", "rb"))
+    kitti_st1 = pickle.load(open("pickle_files/gold_stop_track_dict_750_average.pickle", "rb"))
+    kitti_st2 = pickle.load(open("pickle_files/pred_stop_track_dict_750_average.pickle", "rb"))
     kitti_st1, kitti_st2 = convert_kitti_dict(kitti_st1, kitti_st2)
     precision, recall = compute_precision_recall(kitti_st1, kitti_st2)
     print("Precision: ", precision)
