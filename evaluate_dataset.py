@@ -41,6 +41,10 @@ import torch
 from torch.autograd import Variable
 import torch.nn.functional as F
 
+from multiprocessing import Process, Lock
+
+
+
 thrs = np.arange(0.40, 0.45, 0.05)
 
 
@@ -88,12 +92,129 @@ def get_instances(im):
     obj_ids = np.unique(img)
     return [obj_id % 1000 for obj_id in obj_ids]
 
+def autoencoder_similarity(autoencoder, current_cropped, prev_cropped_tracks, prev_cropped, average=True):
+    from torchvision import transforms
+    
+    preprocess = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    def encoding_pipeline(cropped_im, preprocess):
+        pil_image = Image.fromarray(cropped_im)
+        input_tensor = preprocess(pil_image)
+        input_batch = input_tensor.unsqueeze(0) 
+        feature_vec=autoencoder(input_batch)
+        return feature_vec
+            
+    #print(prev_feature_vec)
+     
+    prev_feature_vec = encoding_pipeline(prev_cropped, preprocess)
+    if average: 
+        prev_cropped_tracks.append(prev_feature_vec)
+        prev_feature_vec = torch.mean(torch.stack(prev_cropped_tracks), axis=1)
+
+    current_feature_vec = encoding_pipeline(current_cropped, preprocess)    
+    #print(current_feature_vec)
+    #print(prev_feature_vec.shape)
+    cossim = torch.nn.CosineSimilarity()
+    sim = cossim(current_feature_vec, prev_feature_vec)
+    #print("sim ", sim)
+    return tensor_to_float(sim), prev_cropped_tracks
+
+def ssim(prev_cropped_image, current_cropped_image):
+    common_size = (150, 150)
+    try:
+        prev_cropped_image= cv2.resize(prev_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
+        current_cropped_image = cv2.resize(current_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
+
+        score, diff = structural_similarity(prev_cropped_image, current_cropped_image, full=True, multichannel=True)
+    except Exception as e:
+        score=1.0
+    return score
+
+def track_object(lock, autoencoder ,model, hp, scene, start, end,obj, data, images_to_consider, output_dir, 
+                pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict, 
+                mask_enable=True, refine_enable=True, device='cpu'):
+    print('obj ', obj)
+    #current_instance = str(obj//1000)+'&'+str(obj%1000)
+    prev_feature = []
+    for index, im in enumerate(data[scene]['annotations'][:images_to_consider]):
+        #instances = get_instances(im)
+        im = data[scene]['camera'][index]
+        cv_im = cv2.imread(im)
+        #cv_im = cv2.resize(cv_im, (1238,374), interpolation = cv2.INTER_AREA)
+        anno_im = Image.open(data[scene]['annotations'][index])
+        print(data[scene]['annotations'][index])
+        #anno_im = anno_im.resize((1238,374), Image.ANTIALIAS)
+        #anno_im.show()
+        anno_array = np.array(anno_im)
+        if index == start:  # init
+            mask = anno_array == obj
+            x, y, w, h = cv2.boundingRect((mask).astype(np.uint8))
+            cx, cy = x + w/2, y + h/2
+            if cx == 0 and cy == 0:
+                break
+            target_pos = np.array([cx, cy])
+            target_sz = np.array([w, h])
+            state = siamese_init(cv_im, target_pos, target_sz, model, hp, device=device)  # init tracker
+        elif end >= index > start:  # tracking
+            state = siamese_track(state, cv_im, mask_enable, refine_enable, device=device)  # track
+            current_objects = np.unique(anno_array)
+            #current_in = [current_object% 1000 for current_object in current_objects]
+            goldstop = False
+            if obj not in current_objects:
+                gold_stop_track_dict[scene][obj].append(index)
+                #print("Gold scene ", scene, " obj ", obj//1000," instance ", obj%1000,  " stop track ", index)
+                goldstop = True
+            current_instance_mask = anno_array
+            current_instance_mask[current_instance_mask == obj] = 1
+            #print(current_instance_mask)
+            mask = state['mask']
+            check_mask = state['mask']
+            check_mask[check_mask>thrs] = 1
+            check_mask[check_mask<=thrs] = 0 
+            mask_sum = check_mask + current_instance_mask
+            intersec = np.sum(mask_sum[mask_sum==2])
+            trackstop = False
+            if intersec == 0:
+                #estimate_gold_stop_track_dict[scene][obj].append(index)
+                trackstop = True
+            if index > start+1:
+                current_poly = state["ploygon"]
+                current_im = cv_im 
+                prev_im = cv2.imread(data[scene]['camera'][index-1])
+                try:  
+                    current_cropped = crop_rotated_rect(current_im, current_poly)
+                    prev_cropped = crop_rotated_rect(prev_im, prev_poly)
+                    score, prev_feature = autoencoder_similarity(autoencoder, current_cropped, prev_feature, prev_cropped, average=False)
+                #score = ssim(prev_cropped_image, current_cropped_image)
+                #prev_cropped_tracks.append(prev_feature)
+                #common_size = (150, 150)
+                #dummy_input = torch.ones((64,3,7,7))
+                #input_tensor = torch.from_numpy(np.transpose(current_im, (2, 0, 1))[None, :])
+                except Exception as e:
+                    score=1.0 
+                    print(e)
+                #score=1
+                if score < 0.3:
+                    pred_stop_track_dict[scene][obj].append(index)
+            prev_poly = state["ploygon"]
+        if gold_stop_track_dict[scene][obj] != []:
+            break
+    pickle.dump(gold_stop_track_dict, open("pickle_files/gold_"+output_dir+".pickle", "wb"))
+    pickle.dump(pred_stop_track_dict, open("pickle_files/pred_"+output_dir+".pickle", "wb"))
+    pickle.dump(estimate_gold_stop_track_dict, open("pickle_files/estimate_gold_"+output_dir+".pickle", "wb"))
+
 
 def eval_kitti(model, data, hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'):
     gold_stop_track_dict = {}
     estimate_gold_stop_track_dict = {}
     pred_stop_track_dict = {}
     images_to_consider = 50
+    output_dir = "autoenc_05"
+    #data = shuffle_data(data, images_to_consider)
     autoencoder = ImagenetTransferAutoencoder()
     for scene in data:
         start = 0 
@@ -104,117 +225,36 @@ def eval_kitti(model, data, hp, mask_enable=True, refine_enable=True, mot_enable
         start_im = data[scene]['annotations'][0]
         img = np.array(Image.open(start_im))
         obj_ids = np.unique(img)
+        # TODO random entries here 
+        
         images_to_consider = min([images_to_consider, len(data[scene]['annotations'])-1])
+        lock = Lock()
+        import threading
+        
+        threads = []
         for obj in obj_ids:
-            if not obj//1000 == 0:
-                prev_track_windows = []
-                pred_stop_track_dict[scene][obj%1000] = []
-                gold_stop_track_dict[scene][obj%1000] = []
-                estimate_gold_stop_track_dict[scene][obj%1000] = []
-                print("class ", obj//1000)
-                collect_states=[]
-                current_instance = obj%1000
-                for index, im in enumerate(data[scene]['annotations'][:images_to_consider]):
-                    #instances = get_instances(im)
-                    im = data[scene]['camera'][index]
-                    cv_im = cv2.imread(im)
-                    anno_im = data[scene]['annotations'][index]
-                    anno_array = np.array(Image.open(anno_im))
-                    if index == start:  # init
-                        mask = anno_array == obj
-                        x, y, w, h = cv2.boundingRect((mask).astype(np.uint8))
-                        cx, cy = x + w/2, y + h/2
-                        if cx == 0 and cy == 0:
-                            break
-                        target_pos = np.array([cx, cy])
-                        target_sz = np.array([w, h])
-                        state = siamese_init(cv_im, target_pos, target_sz, model, hp, device=device)  # init tracker
-                    elif end >= index > start:  # tracking
-                        state = siamese_track(state, cv_im, mask_enable, refine_enable, device=device)  # track
-                        current_objects = np.unique(anno_array)
-                        current_instances = [current_object% 1000 for current_object in current_objects]
-                        if current_instance not in current_instances:
-                            gold_stop_track_dict[scene][obj%1000].append(index)
-                            #print("Gold scene ", scene, " obj ", obj//1000," instance ", obj%1000,  " stop track ", index)
+            if not obj//1000 in [0,10]:
+                pred_stop_track_dict[scene][obj] = []
+                gold_stop_track_dict[scene][obj] = []
+                estimate_gold_stop_track_dict[scene][obj] = []
+                t = threading.Thread(target=track_object, args=(lock, autoencoder, model, hp, scene, start, end, obj, data, images_to_consider, output_dir, \
+                pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict))
+                threads.append(t)
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
-                        current_instance_mask = anno_array
-                        current_instance_mask[current_instance_mask%1000 == current_instance] = 1
-                        #print(current_instance_mask)
-                        mask = state['mask']
-                        check_mask = state['mask']
-                        check_mask[check_mask>thrs] = 1
-                        check_mask[check_mask<=thrs] = 0 
-                        mask_sum = check_mask + current_instance_mask
-                        intersec = np.sum(mask_sum[mask_sum==2])
-                        if intersec == 0:
-                            estimate_gold_stop_track_dict[scene][obj%1000].append(index)
-                            #print("estimate scene ", scene, " obj ", obj//1000," instance ", obj%1000,  " stop track ", index)
-                        if index > start+1:
-                            current_location = state['minAreaRect']
-                            current_im = cv_im 
-                            prev_state = collect_states[-1]
-                            prev_location = prev_state['minAreaRect']
-                            prev_im = cv2.imread(data[scene]['camera'][index-1])
-                            if prev_location != [] and current_location != []:
-                                if len(current_location[0]) == 2 and len(prev_location[0]) == 2:
-                                    print(current_location)
-                                    print(prev_location)
-                                    current_cropped_image = crop_minAreaRect(current_im, current_location)
-                                    prev_cropped_image = crop_minAreaRect(prev_im, prev_location)
-                                    common_size = (150, 150)
-                                    #dummy_input = torch.ones((64,3,7,7))
-                                    #input_tensor = torch.from_numpy(np.transpose(current_im, (2, 0, 1))[None, :])
-                                    
-                                    from torchvision import transforms
-                                    print(current_cropped_image.shape)
-                                    print(prev_cropped_image.shape)
-                                    #input_image = Image.open(filename)
-                                    preprocess = transforms.Compose([
-                                        transforms.ToPILImage(),
-                                        transforms.Resize(256),
-                                        transforms.CenterCrop(224),
-                                        transforms.ToTensor()
-                                        #transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-                                    ])
-                                    current_input_tensor = preprocess(current_cropped_image)
-                                    current_input_batch = current_input_tensor.unsqueeze(0) # create a mini-batch as expected by the model
-                                    current_feature_vec=autoencoder(current_input_batch)
-
-                                    prev_input_tensor = preprocess(prev_cropped_image)
-                                    prev_input_batch = prev_input_tensor.unsqueeze(0) # create a mini-batch as expected by the model
-                                    prev_feature_vec=autoencoder(prev_input_batch)
-                                    # move the input and model to GPU for speed if available
-                                    
-
-                                    try:
-                                        prev_cropped_image= cv2.resize(prev_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
-                                        #prev_track_windows.append(prev_cropped_image)
-                                        #average_track = np.mean(prev_track_windows, axis=0)
-                                        current_cropped_image = cv2.resize(current_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
-                                        #score, diff = structural_similarity(prev_cropped_image, current_cropped_image, full=True, multichannel=True)
-                                        prev_feat_vec = autoencoder.forward(torch.from_numpy(prev_cropped_image))
-                                        curr_feat_vec = autoencoder.forward(torch.from_numpy(current_cropped_image))
-                                        #print("wtf")
-                                        #print("prev", prev_feat_vec)
-                                        #print(curr_feat_vec)
-                                        print("not excepted")
-                                        score = 1.0
-                                    except Exception as e:
-                                        print("excepted ", e)
-                                        score=1.0
-
-                                    if score < 0.05:
-                                        pred_stop_track_dict[scene][obj%1000].append(index)
-                    collect_states.append(state)
-                    if gold_stop_track_dict[scene][obj%1000] != []:
-                        break
-                pickle.dump(gold_stop_track_dict, open("pickle_files/gold_stop_track_dict_750_autoenc.pickle", "wb"))
-                pickle.dump(pred_stop_track_dict, open("pickle_files/pred_stop_track_dict_750_autoenc.pickle", "wb"))
-                pickle.dump(estimate_gold_stop_track_dict, open("pickle_files/estimate_gold_stop_track_dict_750_autoenc.pickle", "wb"))
+        print("lost mind and came back")
+        pred_stop_track_dict = pickle.load(open("pickle_files/pred_"+output_dir+".pickle", "rb"))
+        gold_stop_track_dict = pickle.load(open("pickle_files/gold_"+output_dir+".pickle", "rb"))
+        estimate_gold_stop_track_dict = pickle.load(open("pickle_files/estimate_gold_"+output_dir+".pickle", "rb"))
+        for obj in obj_ids:
+            if not obj//1000 in [0,10]:
                 print(scene)
-                print("Gold: obj ", obj//1000," instance ", obj%1000,  " stop track ", gold_stop_track_dict[scene][obj%1000])
-                print("Estimate gold: obj ", obj//1000," instance ", obj%1000,  " stop track ", estimate_gold_stop_track_dict[scene][obj%1000])
-                print("Prediction  obj ", obj//1000," instance ", obj%1000,  " stop track ", pred_stop_track_dict[scene][obj%1000])
+                print("Gold: obj ", obj,  " stop track ", gold_stop_track_dict[scene][obj])
+                print("Estimate gold: obj ", obj,  " stop track ", estimate_gold_stop_track_dict[scene][obj])
+                print("Prediction  obj ", obj,  " stop track ", pred_stop_track_dict[scene][obj])
     return gold_stop_track_dict, pred_stop_track_dict
 
 def eval_a2d2(model, data, hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'): 

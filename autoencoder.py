@@ -7,7 +7,7 @@ class ImagenetTransferAutoencoder(pl.LightningModule):
     def __init__(self):
         super().__init__()
         # init a pretrained resnet
-        num_target_classes = 10
+        num_target_classes = 8
         #, avg_pool="AdaptiveAvgPool2d"
         self.feature_extractor = models.resnet50(pretrained=True)
         self.feature_extractor.eval()
@@ -18,4 +18,4 @@ class ImagenetTransferAutoencoder(pl.LightningModule):
     def forward(self, x):
         representations = self.feature_extractor(x)
         x = self.classifier(representations)
-        return x 
+        return x

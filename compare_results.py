@@ -24,19 +24,15 @@ def compute_precision_recall(st1, st2):
         recall = true_positives/(true_positives+false_negatives)
     return precision, recall
 
-def convert_kitti_dict(st1, st2):
-    for scene in st1: 
-        for obj in st1[scene]:
-            if isinstance(st1[scene][obj], list):
-                if st1[scene][obj] == []:
-                    st1[scene][obj] = 9000
+def convert_kitti_dict(st):
+    for scene in st: 
+        for obj in st[scene]:
+            if isinstance(st[scene][obj], list):
+                if st[scene][obj] == []:
+                    st[scene][obj] = 9000
                 else:
-                    st1[scene][obj] = st1[scene][obj][0]
-                if st2[scene][obj] == []:
-                    st2[scene][obj] = 9000
-                else:
-                    st2[scene][obj] = st2[scene][obj][0]
-    return st1, st2
+                    st[scene][obj] = st[scene][obj][0]
+    return st
 
 
 def compute_object_wise_precision_recall(st1, st2):
@@ -87,18 +83,19 @@ def main():
     with open('../../Uni/9.Semester/AP/class_list.json') as json_file: 
         lookup = json.load(json_file) 
     lookup = {ImageColor.getcolor(k, "RGB"):v for k,v in lookup.items()}
-    path = "/media/samuki/Elements/camera_lidar_semantic"
+    #path = "/media/samuki/Elements/camera_lidar_semantic"
+    #path = "pickle_files/"
     # current tracks: 
     # dir1 = gold without exception for different shadings
     # dir3 = gold with exception for different shadings
     # dir2 = stop calculation through ssim 
-    dir1 = path+"_results/"
-    dir2 = path+"_results2/"
-    dir3 = path+"_gold_results2/"
-    st1 = pickle.load(open(dir1+"stop_track_dict.pickle", "rb"))
-    st2 = pickle.load(open(dir2+"stop_track_dict.pickle", "rb"))
-    st3 = pickle.load(open(dir3+"stop_track_dict.pickle", "rb"))
-    precision, recall = compute_precision_recall(st1, st2)
+    #dir1 = path+"_results/"
+    #dir2 = path+"_results2/"
+    #dir3 = path+"_gold_results2/"
+    #st1 = pickle.load(open(dir1+"stop_track_dict.pickle", "rb"))
+    #st2 = pickle.load(open(dir2+"stop_track_dict.pickle", "rb"))
+    #st3 = pickle.load(open(dir3+"stop_track_dict.pickle", "rb"))
+    #precision, recall = compute_precision_recall(st1, st2)
     #print("Precision: ", precision)
     #print("Recall: ", recall)
     """
@@ -112,23 +109,35 @@ def main():
         else:
             print(lookup[obj], " no true positives")
     """
-    iou_dict1 =  pickle.load(open(dir1+"iou_dict.pickle", "rb"))
-    iou_dict2 =  pickle.load(open(dir2+"iou_dict.pickle", "rb"))
-    iou_dict3 = pickle.load(open(dir3+"iou_dict.pickle", "rb"))
+    #iou_dict1 =  pickle.load(open(dir1+"iou_dict.pickle", "rb"))
+    #iou_dict2 =  pickle.load(open(dir2+"iou_dict.pickle", "rb"))
+    #iou_dict3 = pickle.load(open(dir3+"iou_dict.pickle", "rb"))
     #compare_iou(iou_dict1, iou_dict2, lookup)
     #compare_iou(iou_dict1,convert_iou_object_dict(iou_dict3), lookup)
     #tl1, tl2 = avg_track_length(st1, st2)
     #print("len st1: ", sum(track_length_st1)/len(track_length_st1))
     #print("len st2: ", sum(track_length_st2)/len(track_length_st2))
 
-    tl1, tl3 = avg_track_length(st1, st3)
+    #tl1, tl3 = avg_track_length(st1, st3)
     #print("len st1: ", tl1)
     #print("len st3: ", tl3)
 
-    kitti_st1 = pickle.load(open("pickle_files/gold_stop_track_dict_750_average.pickle", "rb"))
-    kitti_st2 = pickle.load(open("pickle_files/pred_stop_track_dict_750_average.pickle", "rb"))
-    kitti_st1, kitti_st2 = convert_kitti_dict(kitti_st1, kitti_st2)
+    # dict2 = ssim but wrong tracking window
+    # 750 autoenc is autoenc with 8 classes + 0.5 thr
+    # average autoenc is no bl 
+    mode = "_average_autoenc"
+    mode = "othertest"
+    #mode = "autoenc_05"
+    kitti_st1 = pickle.load(open("pickle_files/gold_"+mode+".pickle", "rb"))
+    kitti_st2 = pickle.load(open("pickle_files/pred_"+mode+".pickle", "rb"))
+    kitti_st3 = pickle.load(open("pickle_files/estimate_gold_"+mode+".pickle", "rb"))
+    kitti_st1 = convert_kitti_dict(kitti_st1)
+    kitti_st2 = convert_kitti_dict(kitti_st2)
+    kitti_st3 = convert_kitti_dict(kitti_st3)
+    upp_b_precision, upp_b_recall = compute_precision_recall(kitti_st1, kitti_st3)
     precision, recall = compute_precision_recall(kitti_st1, kitti_st2)
+    print("Upper bound Precision: ", upp_b_precision)
+    print("Upper bound Recall: ", upp_b_recall)
     print("Precision: ", precision)
     print("Recall: ", recall)
     
