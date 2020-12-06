@@ -3,6 +3,7 @@ import numpy as np
 from collections import OrderedDict
 from os.path import join, realpath, dirname, exists, isdir
 from os import listdir
+import yaml
 import os
 import glob
 from PIL import Image
@@ -99,3 +100,24 @@ def load_a2d2(path):
             # assert images and annotations have same length
             assert(len(data[scene]['annotations']) == len(data[scene]['camera']))
     return data
+
+def load_eval_config(args):
+    with open(args.eval_config) as file:
+    # The FullLoader parameter handles the conversion from YAML
+    # scalar values to Python the dictionary format
+        eval_config = yaml.load(file, Loader=yaml.FullLoader)
+    # load siammask args
+    args.resume = eval_config['checkpoint']
+    args.arch = eval_config['arch']
+    args.config = eval_config['siammask_config']
+
+    # load custom args
+    args.dataset = eval_config['dataset']
+    args.datapath = eval_config['datapath']
+    args.similarity = eval_config['similarity']
+    args.thresholds = eval_config['thresholds']
+    args.autoencoder_classes = eval_config['autoencoder_classes']
+    args.seed = eval_config['seed']
+    args.random_entries = eval_config['random_entries']
+    args.frames_per_entry = eval_config['frames_per_entry']
+    return args

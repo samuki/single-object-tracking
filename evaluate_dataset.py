@@ -1,28 +1,32 @@
-from os.path import join, realpath, dirname, exists, isdir
-from os import listdir
 import os
-import logging
 import glob
-import numpy as np
 import json
+import pickle
+import threading
+from multiprocessing import Process, Lock
+import logging
+import argparse
 from collections import OrderedDict
+import numpy as np
+import sys
+
+import torch
+from torch.autograd import Variable
+import torch.nn.functional as F
 import cv2
 from PIL import Image, ImageColor
 import matplotlib.pylab as plt
 import matplotlib.image as mpimg
-import time
 from scipy import ndimage
 import scipy.misc
-from skimage.metrics import structural_similarity
-import pickle
-import threading
 
 # own imports 
 from utility import *
 from autoencoder import ImagenetTransferAutoencoder
-import sys
-sys.path.append("../SiamMask")
+from pretrained_autoencoder import init_autoencoder, pretrained_autoencoder_similarity
 
+# SiamMask imports
+sys.path.append("../SiamMask")
 from utils.log_helper import init_log, add_file_handler
 from utils.load_helper import load_pretrain
 from utils.bbox_helper import get_axis_aligned_bbox, cxy_wh_2_rect
@@ -31,33 +35,35 @@ from utils.anchors import Anchors
 from utils.tracker_config import TrackerConfig
 from utils.config_helper import load_config
 from utils.pyvotkit.region import vot_overlap, vot_float2str
-
 from tools.test import *
-
-import argparse
-import logging
-
-import torch
-from torch.autograd import Variable
-import torch.nn.functional as F
-
-from multiprocessing import Process, Lock
-
-
 
 thrs = np.arange(0.40, 0.45, 0.05)
 
-
-parser = argparse.ArgumentParser(description='Test SiamMask')
+parser = argparse.ArgumentParser(description='Evaluate Dataset')
 parser.add_argument('--arch', dest='arch', default='', choices=['Custom',],
                     help='architecture of pretrained model')
-parser.add_argument('--config', dest='config', required=True, help='hyper-parameter for SiamMask')
-parser.add_argument('--resume', default='', type=str, required=True,
+parser.add_argument('--config', dest='config', help='hyper-parameter for SiamMask')
+parser.add_argument('--resume', default='', type=str,
                     metavar='PATH', help='path to latest checkpoint (default: none)')
-parser.add_argument('--dataset', dest='dataset', default='a2d2',
+parser.add_argument('--dataset', dest='dataset', default='VOT2018',
                     help='datasets')
-parser.add_argument('--datapath', dest='datapath', default='.',
-                    help='datapath')
+parser.add_argument('--datapath', dest='datapath', default='',
+help='datapath')
+parser.add_argument('--eval_config', dest='eval_config', required=True, help='hyper-parameter for evaluation')
+parser.add_argument('--similarity', dest='similarity', default='',
+                    help='similarity')
+parser.add_argument('--thresholds', dest='thresholds', default=[],
+                    help='thresholds')
+parser.add_argument('--autoencoder_classes', dest='autoencoder_classes', default=8,
+                    help='autoencoder_classes')
+parser.add_argument('--seed', dest='seed', default=42,
+                    help='seed')
+parser.add_argument('--random_entries', dest='random_entries', default=5,
+                    help='random_entries')
+
+parser.add_argument('--frames_per_entry', dest='frames_per_entry', default=50,
+                    help='frames_per_entry')
+
 
 def MultiBatchIouMeter(thrs, outputs, targets, rgb, end_tracks, start=None, end=None):
     targets = np.array(targets)
@@ -134,21 +140,19 @@ def ssim(prev_cropped_image, current_cropped_image):
         score=1.0
     return score
 
-def track_object(lock, autoencoder ,model, hp, scene, start, end,obj, data, images_to_consider, output_dir, 
+def track_object(lock, autoencoder, entry_point, thr,model, hp, scene,obj, data, images_to_consider, output_dir, 
                 pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict, 
                 mask_enable=True, refine_enable=True, device='cpu'):
-    print('obj ', obj)
-    #current_instance = str(obj//1000)+'&'+str(obj%1000)
     prev_feature = []
-    for index, im in enumerate(data[scene]['annotations'][:images_to_consider]):
-        #instances = get_instances(im)
-        im = data[scene]['camera'][index]
-        cv_im = cv2.imread(im)
-        #cv_im = cv2.resize(cv_im, (1238,374), interpolation = cv2.INTER_AREA)
-        anno_im = Image.open(data[scene]['annotations'][index])
-        print(data[scene]['annotations'][index])
-        #anno_im = anno_im.resize((1238,374), Image.ANTIALIAS)
-        #anno_im.show()
+    current_annos = data[scene]['annotations'][entry_point:entry_point+images_to_consider]
+    current_images = data[scene]['camera'][entry_point:entry_point+images_to_consider]
+    start = 0 
+    end = len(current_images)-1
+    goldstop=False
+    for index, im in enumerate(current_annos):
+        cam_im = current_images[index]
+        cv_im = cv2.imread(cam_im)
+        anno_im = Image.open(im)
         anno_array = np.array(anno_im)
         if index == start:  # init
             mask = anno_array == obj
@@ -163,9 +167,9 @@ def track_object(lock, autoencoder ,model, hp, scene, start, end,obj, data, imag
             state = siamese_track(state, cv_im, mask_enable, refine_enable, device=device)  # track
             current_objects = np.unique(anno_array)
             #current_in = [current_object% 1000 for current_object in current_objects]
-            goldstop = False
             if obj not in current_objects:
-                gold_stop_track_dict[scene][obj].append(index)
+                #print("goldstop")
+                gold_stop_track_dict[scene][entry_point][obj].append(index)
                 #print("Gold scene ", scene, " obj ", obj//1000," instance ", obj%1000,  " stop track ", index)
                 goldstop = True
             current_instance_mask = anno_array
@@ -179,87 +183,107 @@ def track_object(lock, autoencoder ,model, hp, scene, start, end,obj, data, imag
             intersec = np.sum(mask_sum[mask_sum==2])
             trackstop = False
             if intersec == 0:
-                #estimate_gold_stop_track_dict[scene][obj].append(index)
+                estimate_gold_stop_track_dict[scene][entry_point][obj].append(index)
                 trackstop = True
             if index > start+1:
                 current_poly = state["ploygon"]
                 current_im = cv_im 
-                prev_im = cv2.imread(data[scene]['camera'][index-1])
-                try:  
-                    current_cropped = crop_rotated_rect(current_im, current_poly)
-                    prev_cropped = crop_rotated_rect(prev_im, prev_poly)
-                    score, prev_feature = autoencoder_similarity(autoencoder, current_cropped, prev_feature, prev_cropped, average=False)
-                #score = ssim(prev_cropped_image, current_cropped_image)
-                #prev_cropped_tracks.append(prev_feature)
-                #common_size = (150, 150)
-                #dummy_input = torch.ones((64,3,7,7))
-                #input_tensor = torch.from_numpy(np.transpose(current_im, (2, 0, 1))[None, :])
-                except Exception as e:
-                    score=1.0 
-                    print(e)
-                #score=1
-                if score < 0.3:
-                    pred_stop_track_dict[scene][obj].append(index)
+                prev_im = cv2.imread(current_images[index-1])
+                if args.similarity in ['autoencoder', 'pretrained_autoencoder', 'ssim']: 
+                    try:  
+                        current_cropped = crop_rotated_rect(current_im, current_poly)
+                        prev_cropped = crop_rotated_rect(prev_im, prev_poly)
+                        if args.similarity == 'autoencoder':
+                            score, prev_feature = autoencoder_similarity(autoencoder, 
+                            current_cropped, prev_feature, prev_cropped, average=False)
+                        elif args.similarity == 'pretrained_autoencoder':
+                            score, prev_feature = pretrained_autoencoder_similarity(autoencoder,
+                                current_cropped, prev_feature, prev_cropped)
+                        elif args.similarity == 'ssim':
+                            score = ssim(prev_cropped, current_cropped)
+                        else: 
+                            print("Config error no similarity measure")
+                    except Exception as e:
+                        score=1.0 
+                        print(e)
+                if args.similarity == 'confidence_score':
+                    score = state['score']
+                elif args.similarity == 'constant':
+                    score = 1
+                if score < thr:
+                    pred_stop_track_dict[scene][entry_point][obj].append(index)
             prev_poly = state["ploygon"]
-        if gold_stop_track_dict[scene][obj] != []:
+        if goldstop:
             break
+    lock.acquire()
     pickle.dump(gold_stop_track_dict, open("pickle_files/gold_"+output_dir+".pickle", "wb"))
     pickle.dump(pred_stop_track_dict, open("pickle_files/pred_"+output_dir+".pickle", "wb"))
     pickle.dump(estimate_gold_stop_track_dict, open("pickle_files/estimate_gold_"+output_dir+".pickle", "wb"))
+    lock.release()
 
-
-def eval_kitti(model, data, hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'):
+def eval_kitti(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'):
     gold_stop_track_dict = {}
     estimate_gold_stop_track_dict = {}
     pred_stop_track_dict = {}
-    images_to_consider = 50
-    output_dir = "autoenc_05"
+    np.random.seed(args.seed)
+    num_random_entries = args.random_entries
+    images_to_consider = args.frames_per_entry
+    output_dir = args.similarity+str(thr)
+    if args.similarity == 'autoencoder':
+        autoencoder = ImagenetTransferAutoencoder(args.autoencoder_classes)
+    elif args.similarity == 'pretrained_autoencoder':
+        autoencoder = init_autoencoder()
+    else: 
+        autoencoder = ''
     #data = shuffle_data(data, images_to_consider)
-    autoencoder = ImagenetTransferAutoencoder()
     for scene in data:
-        start = 0 
-        end = len(data[scene]['camera'])-1
+        print("Scene ", scene)
+        entry_points = np.random.randint(low=0, \
+            high=len(data[scene]['camera'])-5,size=num_random_entries)
         gold_stop_track_dict[scene] = {}
         pred_stop_track_dict[scene] = {}
         estimate_gold_stop_track_dict[scene] = {}
-        start_im = data[scene]['annotations'][0]
-        img = np.array(Image.open(start_im))
-        obj_ids = np.unique(img)
-        # TODO random entries here 
-        
-        images_to_consider = min([images_to_consider, len(data[scene]['annotations'])-1])
-        lock = Lock()
-        import threading
-        
-        threads = []
-        for obj in obj_ids:
-            if not obj//1000 in [0,10]:
-                pred_stop_track_dict[scene][obj] = []
-                gold_stop_track_dict[scene][obj] = []
-                estimate_gold_stop_track_dict[scene][obj] = []
-                t = threading.Thread(target=track_object, args=(lock, autoencoder, model, hp, scene, start, end, obj, data, images_to_consider, output_dir, \
-                pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict))
-                threads.append(t)
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        print("lost mind and came back")
+        for entry_point in entry_points:
+            gold_stop_track_dict[scene][entry_point] = {}
+            pred_stop_track_dict[scene][entry_point] = {}
+            estimate_gold_stop_track_dict[scene][entry_point] = {}
+            start_im = data[scene]['annotations'][entry_point]
+            img = np.array(Image.open(start_im))
+            obj_ids = np.unique(img)
+            # TODO random entries here 
+            images_to_consider = min([images_to_consider, len(data[scene]['annotations'][entry_point:])-1])
+            lock = Lock()
+            import threading
+            threads = []
+            for obj in obj_ids:
+                if not obj//1000 in [0,10]:
+                    pred_stop_track_dict[scene][entry_point][obj] = []
+                    gold_stop_track_dict[scene][entry_point][obj] = []
+                    estimate_gold_stop_track_dict[scene][entry_point][obj] = []
+                    t = threading.Thread(target=track_object, args=(lock,autoencoder, entry_point, thr, model, hp, scene, obj, data, images_to_consider, output_dir, \
+                    pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict))
+                    threads.append(t)
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
         pred_stop_track_dict = pickle.load(open("pickle_files/pred_"+output_dir+".pickle", "rb"))
         gold_stop_track_dict = pickle.load(open("pickle_files/gold_"+output_dir+".pickle", "rb"))
         estimate_gold_stop_track_dict = pickle.load(open("pickle_files/estimate_gold_"+output_dir+".pickle", "rb"))
-        for obj in obj_ids:
-            if not obj//1000 in [0,10]:
-                print(scene)
-                print("Gold: obj ", obj,  " stop track ", gold_stop_track_dict[scene][obj])
-                print("Estimate gold: obj ", obj,  " stop track ", estimate_gold_stop_track_dict[scene][obj])
-                print("Prediction  obj ", obj,  " stop track ", pred_stop_track_dict[scene][obj])
+        for entry_point in entry_points:
+            #print(gold_stop_track_dict)
+            if entry_point in gold_stop_track_dict[scene]: 
+                for obj in gold_stop_track_dict[scene][entry_point]:
+                    if not obj//1000 in [0,10]:
+                        print(scene)
+                        print("Gold: obj ", obj,  " stop track ", gold_stop_track_dict[scene][entry_point][obj])
+                        print("Estimate gold: obj ", obj,  " stop track ", estimate_gold_stop_track_dict[scene][entry_point][obj])
+                        print("Prediction  obj ", obj,  " stop track ", pred_stop_track_dict[scene][entry_point][obj])
     return gold_stop_track_dict, pred_stop_track_dict
 
 def eval_a2d2(model, data, hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'): 
 
-    with open('../../Uni/9.Semester/AP/class_list.json') as json_file: 
+    with open('../../Uni/9.Semester/Object_tracking/class_list.json') as json_file: 
         lookup = json.load(json_file) 
     lookup = {ImageColor.getcolor(k, "RGB"):v for k,v in lookup.items()}
     #iou_dict = {lookup[key]:[0,0] for key in lookup.keys()}
@@ -345,6 +369,7 @@ def eval_a2d2(model, data, hp, mask_enable=True, refine_enable=True, mot_enable=
                                 break
                     else:
                         if camera_index > start+1:
+                            # TODO remove min area rect
                             current_location = state['minAreaRect']
                             current_im = im 
                             prev_state = collect_states[-1]
@@ -404,11 +429,10 @@ def eval_a2d2(model, data, hp, mask_enable=True, refine_enable=True, mot_enable=
                 else: 
                     print("Object: ", obj, " seen ", object_ious[obj][0], " times with mean IoU: ", 0)
 def main():
-    #path_to_data = "../../Uni/9.Semester/AP/dataset"
-    #model_path = "experiments/siammask_sharp/SiamMask_DAVIS.pth"
-    #config_path = "experiments/siammask_sharp/config_davis.json"
-    global args, logger, v_id
+    global args, logger
     args = parser.parse_args()
+    args = load_eval_config(args)
+
     cfg = load_config(args)
     init_log('global', logging.INFO)
     logger = logging.getLogger('global')
@@ -433,7 +457,15 @@ def main():
         eval_a2d2(model, data, cfg["hp"])
     elif args.dataset == "kitti":
         data = load_kitti_dataset(args.datapath)
-        eval_kitti(model, data, cfg["hp"])
+        threads = []
+        for thr in args.thresholds:
+            t = threading.Thread(target=eval_kitti, args=(model, thr, data, cfg["hp"]))
+            threads.append(t)
+            #eval_kitti(model, thr, data, cfg["hp"])
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
 if __name__ == '__main__':
     main()

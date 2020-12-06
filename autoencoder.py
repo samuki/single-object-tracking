@@ -4,10 +4,10 @@ from torch import nn
 
 
 class ImagenetTransferAutoencoder(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, num_classes):
         super().__init__()
         # init a pretrained resnet
-        num_target_classes = 8
+        num_target_classes = num_classes
         #, avg_pool="AdaptiveAvgPool2d"
         self.feature_extractor = models.resnet50(pretrained=True)
         self.feature_extractor.eval()

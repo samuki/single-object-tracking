@@ -303,6 +303,7 @@ class App(QMainWindow):
             #if score < 0.35 and self.pic_index > 1:
                 #print("STOP TRACK LOW SIM")
             #current_rgbs = np.unique(current_anno, axis=0)
+            print(state['score'])
             self.display_iou.clear()
             self.display_iou.setText("IoU: " +str(round(iou, 3)))
             self.display_iou.setGeometry(30, self.display_height+100, 250, 50)

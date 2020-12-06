@@ -5,17 +5,19 @@ from PIL import Image, ImageColor
 
 def compute_precision_recall(st1, st2):
     false_positives = 0 
-    false_negatives = 0 
+    false_negatives = 0
     true_positives = 0 
     #true_negatives = 0 
     for scene in st1: 
-        for obj in st1[scene]:
-            if st2[scene][obj] > st1[scene][obj]:
-                false_negatives+=1
-            elif st2[scene][obj] < st1[scene][obj]:
-                false_positives+=1
-            else: 
-                true_positives+=1
+        for entry_point in st1[scene]:
+            for obj in st1[scene][entry_point]:
+                if not st1[scene][entry_point][obj] == []:
+                    if st2[scene][entry_point][obj] ==[]:
+                        false_negatives+=1
+                    elif st2[scene][entry_point][obj] < st1[scene][entry_point][obj]:
+                        false_positives+=1
+                    else: 
+                        true_positives+=1
     if true_positives == 0:
         precision = 0 
         recall = 0
@@ -38,18 +40,19 @@ def convert_kitti_dict(st):
 def compute_object_wise_precision_recall(st1, st2):
     object_dict = {}
     for scene in st1: 
-        for obj in st1[scene]:
-            if not obj in object_dict:
-                object_dict[obj] = {}
-                object_dict[obj]["fp"] = 0
-                object_dict[obj]["fn"] = 0
-                object_dict[obj]["tp"] = 0
-            if st2[scene][obj] > st1[scene][obj]:
-                object_dict[obj]["fn"]+=1
-            elif st2[scene][obj] < st1[scene][obj]:
-                object_dict[obj]["fp"]+=1
-            else: 
-                object_dict[obj]["tp"]+=1
+        for entry_point in st1[scene]: 
+            for obj in st1[scene][entry_point]:
+                if not obj in object_dict:
+                    object_dict[obj] = {}
+                    object_dict[obj]["fp"] = 0
+                    object_dict[obj]["fn"] = 0
+                    object_dict[obj]["tp"] = 0
+                if st2[scene][entry_point][obj] > st1[scene][entry_point][obj]:
+                    object_dict[obj]["fn"]+=1
+                elif st2[scene][entry_point][obj] < st1[scene][entry_point][obj]:
+                    object_dict[obj]["fp"]+=1
+                else: 
+                    object_dict[obj]["tp"]+=1
     return object_dict
 
 def avg_track_length(st1, st2):
@@ -80,7 +83,7 @@ def convert_iou_object_dict(od):
     return object_dict
 
 def main():
-    with open('../../Uni/9.Semester/AP/class_list.json') as json_file: 
+    with open('../../Uni/9.Semester/Object_tracking/class_list.json') as json_file: 
         lookup = json.load(json_file) 
     lookup = {ImageColor.getcolor(k, "RGB"):v for k,v in lookup.items()}
     #path = "/media/samuki/Elements/camera_lidar_semantic"
@@ -125,9 +128,17 @@ def main():
     # dict2 = ssim but wrong tracking window
     # 750 autoenc is autoenc with 8 classes + 0.5 thr
     # average autoenc is no bl 
-    mode = "_average_autoenc"
-    mode = "othertest"
+    #mode = "_average_autoenc"
+    #mode = "othertest"
     #mode = "autoenc_05"
+    #mode = "score09"
+    #mode = "ssim03"
+    mode = "pretrained_autoenc0.9"
+    #mode = "ssim0.5"
+    #mode = "score0.8"
+    mode = 'confidence_score0.95'
+    #mode = "baseline1"
+    #mode = "pretrained_autoenc0.9"
     kitti_st1 = pickle.load(open("pickle_files/gold_"+mode+".pickle", "rb"))
     kitti_st2 = pickle.load(open("pickle_files/pred_"+mode+".pickle", "rb"))
     kitti_st3 = pickle.load(open("pickle_files/estimate_gold_"+mode+".pickle", "rb"))
@@ -136,10 +147,21 @@ def main():
     kitti_st3 = convert_kitti_dict(kitti_st3)
     upp_b_precision, upp_b_recall = compute_precision_recall(kitti_st1, kitti_st3)
     precision, recall = compute_precision_recall(kitti_st1, kitti_st2)
+    if precision == 0 or recall == 0:
+        f_measure = 0 
+    else:
+        f_measure = 2*(precision*recall)/(precision+recall)
+    if upp_b_precision == 0 or upp_b_recall == 0: 
+        upp_b_f_measure=0
+    else:
+        upp_b_f_measure = 2*(upp_b_precision*upp_b_recall)/(upp_b_precision+upp_b_recall) 
+    print("Mode: ", mode)
     print("Upper bound Precision: ", upp_b_precision)
     print("Upper bound Recall: ", upp_b_recall)
+    print("Upper bound F: ", upp_b_f_measure)
     print("Precision: ", precision)
     print("Recall: ", recall)
+    print("F: ", f_measure)
     
 
 
