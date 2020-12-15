@@ -12,7 +12,6 @@ class ImagenetTransferAutoencoder(pl.LightningModule):
         self.feature_extractor = models.resnet50(pretrained=True)
         self.feature_extractor.eval()
 
-        # use the pretrained model to classify cifar-10 (10 image classes)
         self.classifier = nn.Linear(1000, num_target_classes)
 
     def forward(self, x):

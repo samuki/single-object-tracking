@@ -62,7 +62,7 @@ def init_autoencoder():
 def pretrained_autoencoder_similarity(autoencoder, current_cropped, prev_feature, prev_cropped, data_transforms=data_transforms): 
     transformer = data_transforms['valid']
     with torch.no_grad():
-        if prev_feature == []:
+        if not prev_feature:
             prev_transf = transformer(prev_cropped).unsqueeze(dim=0)
             prev_feature = autoencoder(prev_transf)
         current_transf = transformer(current_cropped).unsqueeze(dim=0)    

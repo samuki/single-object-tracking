@@ -9,3 +9,6 @@ pickle_files
 # VS Code
 .vscode/
 
+#other 
+car_recognition.pt
+kiegeland@cluster.cl.uni-heidelberg.de/

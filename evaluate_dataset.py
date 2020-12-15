@@ -20,6 +20,8 @@ import matplotlib.image as mpimg
 from scipy import ndimage
 import scipy.misc
 
+from skimage.metrics import structural_similarity
+
 # own imports 
 from utility import *
 from autoencoder import ImagenetTransferAutoencoder
@@ -113,17 +115,13 @@ def autoencoder_similarity(autoencoder, current_cropped, prev_cropped_tracks, pr
         input_batch = input_tensor.unsqueeze(0) 
         feature_vec=autoencoder(input_batch)
         return feature_vec
-            
-    #print(prev_feature_vec)
-     
+                 
     prev_feature_vec = encoding_pipeline(prev_cropped, preprocess)
     if average: 
         prev_cropped_tracks.append(prev_feature_vec)
         prev_feature_vec = torch.mean(torch.stack(prev_cropped_tracks), axis=1)
 
     current_feature_vec = encoding_pipeline(current_cropped, preprocess)    
-    #print(current_feature_vec)
-    #print(prev_feature_vec.shape)
     cossim = torch.nn.CosineSimilarity()
     sim = cossim(current_feature_vec, prev_feature_vec)
     #print("sim ", sim)
@@ -137,13 +135,14 @@ def ssim(prev_cropped_image, current_cropped_image):
 
         score, diff = structural_similarity(prev_cropped_image, current_cropped_image, full=True, multichannel=True)
     except Exception as e:
+        print(e)
         score=1.0
     return score
 
 def track_object(lock, autoencoder, entry_point, thr,model, hp, scene,obj, data, images_to_consider, output_dir, 
                 pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict, 
                 mask_enable=True, refine_enable=True, device='cpu'):
-    prev_feature = []
+    prev_feature = None
     current_annos = data[scene]['annotations'][entry_point:entry_point+images_to_consider]
     current_images = data[scene]['camera'][entry_point:entry_point+images_to_consider]
     start = 0 
@@ -199,6 +198,7 @@ def track_object(lock, autoencoder, entry_point, thr,model, hp, scene,obj, data,
                         elif args.similarity == 'pretrained_autoencoder':
                             score, prev_feature = pretrained_autoencoder_similarity(autoencoder,
                                 current_cropped, prev_feature, prev_cropped)
+                            #print('score ', score)
                         elif args.similarity == 'ssim':
                             score = ssim(prev_cropped, current_cropped)
                         else: 
@@ -216,19 +216,20 @@ def track_object(lock, autoencoder, entry_point, thr,model, hp, scene,obj, data,
         if goldstop:
             break
     lock.acquire()
-    pickle.dump(gold_stop_track_dict, open("pickle_files/gold_"+output_dir+".pickle", "wb"))
-    pickle.dump(pred_stop_track_dict, open("pickle_files/pred_"+output_dir+".pickle", "wb"))
-    pickle.dump(estimate_gold_stop_track_dict, open("pickle_files/estimate_gold_"+output_dir+".pickle", "wb"))
+    pickle.dump(gold_stop_track_dict, open(args.dataset+"_pickle_files/gold_"+output_dir+".pickle", "wb"))
+    pickle.dump(pred_stop_track_dict, open(args.dataset+"_pickle_files/pred_"+output_dir+".pickle", "wb"))
+    pickle.dump(estimate_gold_stop_track_dict, open(args.dataset+"_pickle_files/estimate_gold_"+output_dir+".pickle", "wb"))
     lock.release()
 
-def eval_kitti(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'):
+def eval_end_of_track(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'):
     gold_stop_track_dict = {}
     estimate_gold_stop_track_dict = {}
     pred_stop_track_dict = {}
     np.random.seed(args.seed)
     num_random_entries = args.random_entries
     images_to_consider = args.frames_per_entry
-    output_dir = args.similarity+str(thr)
+    output_dir = args.dataset+args.similarity+str(thr)
+    print("output_dir ", output_dir)
     if args.similarity == 'autoencoder':
         autoencoder = ImagenetTransferAutoencoder(args.autoencoder_classes)
     elif args.similarity == 'pretrained_autoencoder':
@@ -238,11 +239,13 @@ def eval_kitti(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_en
     #data = shuffle_data(data, images_to_consider)
     for scene in data:
         print("Scene ", scene)
+        #print(len(data[scene]['camera']))
         entry_points = np.random.randint(low=0, \
             high=len(data[scene]['camera'])-5,size=num_random_entries)
         gold_stop_track_dict[scene] = {}
         pred_stop_track_dict[scene] = {}
         estimate_gold_stop_track_dict[scene] = {}
+        print("entry points ", entry_points)
         for entry_point in entry_points:
             gold_stop_track_dict[scene][entry_point] = {}
             pred_stop_track_dict[scene][entry_point] = {}
@@ -253,7 +256,6 @@ def eval_kitti(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_en
             # TODO random entries here 
             images_to_consider = min([images_to_consider, len(data[scene]['annotations'][entry_point:])-1])
             lock = Lock()
-            import threading
             threads = []
             for obj in obj_ids:
                 if not obj//1000 in [0,10]:
@@ -267,9 +269,9 @@ def eval_kitti(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_en
                 t.start()
             for t in threads:
                 t.join()
-        pred_stop_track_dict = pickle.load(open("pickle_files/pred_"+output_dir+".pickle", "rb"))
-        gold_stop_track_dict = pickle.load(open("pickle_files/gold_"+output_dir+".pickle", "rb"))
-        estimate_gold_stop_track_dict = pickle.load(open("pickle_files/estimate_gold_"+output_dir+".pickle", "rb"))
+        pred_stop_track_dict = pickle.load(open(args.dataset+"_pickle_files/pred_"+output_dir+".pickle", "rb"))
+        gold_stop_track_dict = pickle.load(open(args.dataset+"_pickle_files/gold_"+output_dir+".pickle", "rb"))
+        estimate_gold_stop_track_dict = pickle.load(open(args.dataset+"_pickle_files/estimate_gold_"+output_dir+".pickle", "rb"))
         for entry_point in entry_points:
             #print(gold_stop_track_dict)
             if entry_point in gold_stop_track_dict[scene]: 
@@ -286,12 +288,13 @@ def eval_a2d2(model, data, hp, mask_enable=True, refine_enable=True, mot_enable=
     with open('../../Uni/9.Semester/Object_tracking/class_list.json') as json_file: 
         lookup = json.load(json_file) 
     lookup = {ImageColor.getcolor(k, "RGB"):v for k,v in lookup.items()}
-    #iou_dict = {lookup[key]:[0,0] for key in lookup.keys()}
-    #print("init iou-dict ", iou_dict)
     iou_dict = {}
     #print(lookup)
     stop_track_dict = {}
     mask_dict = {}
+    #iou_dict = {lookup[key]:[0,0] for key in lookup.keys()}
+    #print("init iou-dict ", iou_dict)
+    
     # change parameters here
     use_gold_crit = True
     save_output_dir = args.dataset+"_gold_results2"
@@ -300,10 +303,9 @@ def eval_a2d2(model, data, hp, mask_enable=True, refine_enable=True, mot_enable=
         iou_dict[scene] = {}
         stop_track_dict[scene] = {}
         mask_dict[scene] = {}
-        print("It's  time for scene ", scene)
+        print("It's time for scene ", scene)
         start = 0 
         #end = len(scene)
-        end = 12
         print("Using ", end, "frames and classes.")
         len_scence = min(len(scene), end)
         if len_scence == 0:
@@ -451,15 +453,21 @@ def main():
     device = torch.device('cuda' if (torch.cuda.is_available() and not args.cpu) else 'cpu')
     model = model.to(device)
 
-    # setup dataset
-    if args.dataset == "a2d2":
-        data = load_a2d2(args.datapath)
-        eval_a2d2(model, data, cfg["hp"])
-    elif args.dataset == "kitti":
+    if args.dataset == 'kitti':
         data = load_kitti_dataset(args.datapath)
+    elif args.dataset == 'a2d2':
+        data = load_a2d2(args.datapath)
+    print("hi1")
+    print("mode ", args.mode)
+    # setup dataset
+    if args.mode == "IoU":
+        eval_a2d2(model, data, cfg["hp"])
+    elif args.mode == "end_of_track":
+        print('hi2')
         threads = []
         for thr in args.thresholds:
-            t = threading.Thread(target=eval_kitti, args=(model, thr, data, cfg["hp"]))
+            print('hi3')
+            t = threading.Thread(target=eval_end_of_track, args=(model, thr, data, cfg["hp"]))
             threads.append(t)
             #eval_kitti(model, thr, data, cfg["hp"])
         for t in threads:

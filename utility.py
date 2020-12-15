@@ -91,14 +91,28 @@ def shuffle_data(data, max_images, seed=42):
 # TODO: find right size for test data
 def load_a2d2(path):
     data = OrderedDict()
-    for scene in listdir(path):
-        if os.path.isdir(path):
+    data_path = path+'camera_lidar_semantic'
+    #instance_path = path+'camera_lidar_semantic_instance'
+    instance_path = '../../Uni/9.Semester/Object_tracking/'+'camera_lidar_semantic_instance'
+    for scene in listdir(data_path):
+        if isdir(join(data_path, scene)):
             # TODO: generalize to all subfolders
             data[scene] = {}
-            data[scene]['annotations'] = sorted(glob.glob(join(path,scene, 'label/cam_front_center', '*.png')))
-            data[scene]['camera'] = sorted(glob.glob(join(path,scene,  'camera/cam_front_center', '*.png')))
-            # assert images and annotations have same length
+            data[scene]['annotations'] = sorted(glob.glob(join(instance_path,scene,  'instance/cam_front_center', '*.png')))
+            data[scene]['semantic'] = sorted(glob.glob(join(data_path,scene, 'label/cam_front_center', '*.png')))
+            data[scene]['camera'] = sorted(glob.glob(join(data_path,scene,  'camera/cam_front_center', '*.png')))
+            delete_these = []
+            for index, img in enumerate(data[scene]['camera']):
+                split =img.split('/')
+                #print('/'.join([instance_path]+[split[5]]+['instance']+[split[7]]+[img.split('/')[-1].replace('camera', 'instance')]))
+                #print(data[scene]['annotations'][index])
+                if '/'.join([instance_path]+[split[5]]+['instance']+[split[7]]+[img.split('/')[-1].replace('camera', 'instance')]) not in data[scene]['annotations']:
+                    delete_these.append(index)
+            for index in sorted(delete_these, reverse=True):
+                del data[scene]['semantic'][index] 
+                del data[scene]['camera'][index]
             assert(len(data[scene]['annotations']) == len(data[scene]['camera']))
+            assert(len(data[scene]['semantic']) == len(data[scene]['camera']))
     return data
 
 def load_eval_config(args):
@@ -110,12 +124,12 @@ def load_eval_config(args):
     args.resume = eval_config['checkpoint']
     args.arch = eval_config['arch']
     args.config = eval_config['siammask_config']
-
     # load custom args
     args.dataset = eval_config['dataset']
     args.datapath = eval_config['datapath']
     args.similarity = eval_config['similarity']
     args.thresholds = eval_config['thresholds']
+    args.mode = eval_config['mode']
     args.autoencoder_classes = eval_config['autoencoder_classes']
     args.seed = eval_config['seed']
     args.random_entries = eval_config['random_entries']
