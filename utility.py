@@ -92,6 +92,7 @@ def shuffle_data(data, max_images, seed=42):
 def load_a2d2(path):
     data = OrderedDict()
     data_path = path+'camera_lidar_semantic'
+    total_length={'annotations': 0, 'semantic': 0, 'camera': 0}
     #instance_path = path+'camera_lidar_semantic_instance'
     instance_path = '../../Uni/9.Semester/Object_tracking/'+'camera_lidar_semantic_instance'
     for scene in listdir(data_path):
@@ -101,7 +102,11 @@ def load_a2d2(path):
             data[scene]['annotations'] = sorted(glob.glob(join(instance_path,scene,  'instance/cam_front_center', '*.png')))
             data[scene]['semantic'] = sorted(glob.glob(join(data_path,scene, 'label/cam_front_center', '*.png')))
             data[scene]['camera'] = sorted(glob.glob(join(data_path,scene,  'camera/cam_front_center', '*.png')))
+            total_length['annotations'] += len(data[scene]['annotations'])
+            total_length['camera'] += len(data[scene]['camera'])
+            total_length['semantic'] += len(data[scene]['semantic'])
             delete_these = []
+
             for index, img in enumerate(data[scene]['camera']):
                 split =img.split('/')
                 #print('/'.join([instance_path]+[split[5]]+['instance']+[split[7]]+[img.split('/')[-1].replace('camera', 'instance')]))
@@ -113,6 +118,7 @@ def load_a2d2(path):
                 del data[scene]['camera'][index]
             assert(len(data[scene]['annotations']) == len(data[scene]['camera']))
             assert(len(data[scene]['semantic']) == len(data[scene]['camera']))
+    print('total length: ', total_length)
     return data
 
 def load_eval_config(args):

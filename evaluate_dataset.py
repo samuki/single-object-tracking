@@ -178,9 +178,10 @@ def track_object(lock, autoencoder, entry_point, thr,model, hp, scene,obj, data,
             state = siamese_init(cv_im, target_pos, target_sz, model, hp, device=device)  # init tracker
         elif end >= index > start:  # tracking
             state = siamese_track(state, cv_im, mask_enable, refine_enable, device=device)  # track
-            current_objects = np.unique(anno_array)
+            current_objects = np.unique(np.array(Image.open(im)))
             if obj not in current_objects:
                 gold_stop_track_dict[scene][entry_point][obj].append(index)
+                goldstop=True
             mask = state['mask']
             check_mask = state['mask']
             check_mask[check_mask>np.array([0.4])] = 1
@@ -222,9 +223,12 @@ def track_object(lock, autoencoder, entry_point, thr,model, hp, scene,obj, data,
             prev_poly = state["ploygon"]
         if end >= index >= start:
             pred_masks[0, index, :, :] = mask
-        if predstop:
-            break
-        #if goldstop
+        if args.mode == "IoU": 
+            if predstop:
+                break
+        if args.mode == "end_of_track": 
+            if goldstop:
+                break
     lock.acquire()
     if args.mode == "end_of_track":
         pickle.dump(gold_stop_track_dict, open(args.dataset+"_pickle_files/gold_"+output_dir+".pickle", "wb"))
@@ -241,6 +245,7 @@ def eval_end_of_track(model, thr, data,hp, mask_enable=True, refine_enable=True,
     gold_stop_track_dict = {}
     estimate_gold_stop_track_dict = {}
     pred_stop_track_dict = {}
+    iou_dict = {}
     np.random.seed(args.seed)
     num_random_entries = args.random_entries
     images_to_consider = args.frames_per_entry
@@ -380,6 +385,7 @@ def eval_iou(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_enab
 def main():
     global args, logger
     args = parser.parse_args()
+    args.eval_config = 'configs/a2d2_autoencoder.yaml'
     args = load_eval_config(args)
     cfg = load_config(args)
     init_log('global', logging.INFO)
