@@ -96,6 +96,7 @@ def MultiBatchIouMeter(thrs, outputs, targets, rgb, end_tracks, start=None, end=
                 union = np.sum(mask_sum > 0)
                 if union > 0:
                     iou.append(intxn / union)
+
                 elif union == 0 and intxn == 0:
                     iou.append(1)
             #avg = np.mean(iou)
@@ -146,17 +147,23 @@ def ssim(prev_cropped_image, current_cropped_image):
         score=1.0
     return score
 
-def track_object(lock, autoencoder, entry_point, thr,model, hp, scene,obj, data, images_to_consider, output_dir, 
-                pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict, iou_dict,
+def track_object(lock, autoencoder, entry_point, thr,model, hp, scene, obj_code, data, images_to_consider, output_dir, pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict, iou_dict,gold_iou_dict,
                 mask_enable=True, refine_enable=True, device='cpu'):
     prev_feature = None
     current_annos = data[scene]['annotations'][entry_point:entry_point+images_to_consider]
     current_images = data[scene]['camera'][entry_point:entry_point+images_to_consider]
     start = 0 
+    
+    with open('class_list.json') as json_file: 
+        lookup = json.load(json_file) 
+    lookup = {ImageColor.getcolor(k, "RGB"):v for k,v in lookup.items()}
+    obj = lookup[tuple(obj_code)]
+
     end = len(current_images)-1
     goldstop=False
     predstop=False
-    end_tracks =[len(current_images)-1] 
+    pred_end_tracks =[len(current_images)-1]  
+    gold_end_tracks =[len(current_images)-1] 
     segmentation_array = [np.array(Image.open(x)) for x in current_annos]
     color_track = [annotation.astype(np.uint8) for annotation in segmentation_array]
     pred_masks = np.zeros((1, len(current_annos), color_track[0].shape[0], color_track[0].shape[1]))-1
@@ -166,9 +173,11 @@ def track_object(lock, autoencoder, entry_point, thr,model, hp, scene,obj, data,
         anno_im = Image.open(im)
         anno_array = np.array(anno_im)
         current_instance_mask = anno_array
-        current_instance_mask[current_instance_mask == obj] = 1
+        current_instance_mask[current_instance_mask == obj_code] = 1
         if index == start:  # init
-            mask = np.array(Image.open(im)) == obj
+            print('im ', np.array(Image.open(im)))
+            print('obj ', obj)
+            mask = np.array(Image.open(im)) == obj_code
             x, y, w, h = cv2.boundingRect((mask).astype(np.uint8))
             cx, cy = x + w/2, y + h/2
             if cx == 0 and cy == 0:
@@ -178,10 +187,11 @@ def track_object(lock, autoencoder, entry_point, thr,model, hp, scene,obj, data,
             state = siamese_init(cv_im, target_pos, target_sz, model, hp, device=device)  # init tracker
         elif end >= index > start:  # tracking
             state = siamese_track(state, cv_im, mask_enable, refine_enable, device=device)  # track
-            current_objects = np.unique(np.array(Image.open(im)))
-            if obj not in current_objects:
+            current_objects = np.unique(np.array(Image.open(im)), axis=0)
+            if obj_code not in current_objects:
                 gold_stop_track_dict[scene][entry_point][obj].append(index)
                 goldstop=True
+                gold_end_tracks[0] = index
             mask = state['mask']
             check_mask = state['mask']
             check_mask[check_mask>np.array([0.4])] = 1
@@ -219,12 +229,12 @@ def track_object(lock, autoencoder, entry_point, thr,model, hp, scene,obj, data,
                 if score < thr:
                     pred_stop_track_dict[scene][entry_point][obj].append(index)
                     predstop=True
-                    end_tracks[0] = index
+                    pred_end_tracks[0] = index
             prev_poly = state["ploygon"]
         if end >= index >= start:
             pred_masks[0, index, :, :] = mask
         if args.mode == "IoU": 
-            if predstop:
+            if predstop and goldstop:
                 break
         if args.mode == "end_of_track": 
             if goldstop:
@@ -236,9 +246,13 @@ def track_object(lock, autoencoder, entry_point, thr,model, hp, scene,obj, data,
         pickle.dump(estimate_gold_stop_track_dict, open(args.dataset+"_pickle_files/estimate_gold_"+output_dir+".pickle", "wb"))
     elif args.mode == "IoU":
         pickle.dump(pred_stop_track_dict, open(args.dataset+"_pickle_files/"+output_dir + "_iou_pred_stop_track_dict.pickle", "wb"))
-        multi_mean_iou = MultiBatchIouMeter(thrs, pred_masks, [current_annos], [obj], end_tracks, start=None, end=None)
+        multi_mean_iou = MultiBatchIouMeter(thrs, pred_masks, [current_annos], [obj], pred_end_tracks, start=None, end=None)
         iou_dict[scene][entry_point][obj] = multi_mean_iou
         pickle.dump(iou_dict, open(args.dataset+"_pickle_files/"+output_dir + "_iou_dict.pickle", "wb"))
+        
+        gold_multi_mean_iou = MultiBatchIouMeter(thrs, pred_masks, [current_annos], [obj], gold_end_tracks, start=None, end=None)
+        gold_iou_dict[scene][entry_point][obj] = gold_multi_mean_iou
+        pickle.dump(gold_iou_dict, open(args.dataset+"_pickle_files/"+output_dir + "_gold_iou_dict.pickle", "wb"))
     lock.release()
 
 def eval_end_of_track(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'):
@@ -246,12 +260,15 @@ def eval_end_of_track(model, thr, data,hp, mask_enable=True, refine_enable=True,
     estimate_gold_stop_track_dict = {}
     pred_stop_track_dict = {}
     iou_dict = {}
+    gold_iou_dict = {}
     np.random.seed(args.seed)
     num_random_entries = args.random_entries
     images_to_consider = args.frames_per_entry
+    #output_dir = args.dataset+str(args.seed)+args.similarity+str(thr)
     output_dir = args.dataset+args.similarity+str(thr)
     print("output_dir ", output_dir)
     if args.similarity == 'autoencoder':
+        args.autoencoder_classes = 7
         autoencoder = ImagenetTransferAutoencoder(args.autoencoder_classes)
     elif args.similarity == 'pretrained_autoencoder':
         autoencoder = init_autoencoder()
@@ -273,7 +290,7 @@ def eval_end_of_track(model, thr, data,hp, mask_enable=True, refine_enable=True,
             estimate_gold_stop_track_dict[scene][entry_point] = {}
             start_im = data[scene]['annotations'][entry_point]
             img = np.array(Image.open(start_im))
-            obj_ids = np.unique(img)
+            obj_ids = np.unique(img, axis=0)
             # TODO random entries here 
             images_to_consider = min([images_to_consider, len(data[scene]['annotations'][entry_point:])-1])
             lock = Lock()
@@ -283,7 +300,7 @@ def eval_end_of_track(model, thr, data,hp, mask_enable=True, refine_enable=True,
                 gold_stop_track_dict[scene][entry_point][obj] = []
                 estimate_gold_stop_track_dict[scene][entry_point][obj] = []
                 t = threading.Thread(target=track_object, args=(lock,autoencoder, entry_point, thr, model, hp, scene, obj, data, images_to_consider, output_dir, \
-                pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict, iou_dict))
+                pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict, iou_dict, gold_iou_dict))
                 threads.append(t)
             for t in threads:
                 t.start()
@@ -304,6 +321,7 @@ def eval_end_of_track(model, thr, data,hp, mask_enable=True, refine_enable=True,
 
 def eval_iou(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'):
     iou_dict = {}
+    gold_iou_dict = {}
     gold_stop_track_dict = {}
     estimate_gold_stop_track_dict = {}
     pred_stop_track_dict = {}
@@ -316,10 +334,14 @@ def eval_iou(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_enab
         "bicycle": 6,
         "tractor": 7
     }
+    with open('class_list.json') as json_file:
+        lookup = json.load(json_file)
+    lookup = {ImageColor.getcolor(k, "RGB"):v for k,v in lookup.items()}
+
     np.random.seed(args.seed)
     num_random_entries = args.random_entries
     images_to_consider = args.frames_per_entry
-    output_dir = args.dataset+args.similarity+str(thr)
+    output_dir = 'segmentation'+args.dataset+str(args.seed)+args.similarity+str(thr)
     if args.similarity == 'autoencoder':
         autoencoder = ImagenetTransferAutoencoder(args.autoencoder_classes)
     elif args.similarity == 'pretrained_autoencoder':
@@ -331,39 +353,46 @@ def eval_iou(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_enab
         entry_points = np.random.randint(low=0, \
             high=len(data[scene]['camera'])-5,size=num_random_entries)
         iou_dict[scene] = {}
+        gold_iou_dict[scene] = {}
         gold_stop_track_dict[scene] = {}
         estimate_gold_stop_track_dict[scene] = {}
         pred_stop_track_dict[scene] = {}
         for entry_point in entry_points:
             iou_dict[scene][entry_point] = {}
+            gold_iou_dict[scene][entry_point] = {}
             gold_stop_track_dict[scene][entry_point] = {}
             estimate_gold_stop_track_dict[scene][entry_point] = {}
             pred_stop_track_dict[scene][entry_point] = {}
 
             start_im = data[scene]['annotations'][entry_point]
             img = np.array(Image.open(start_im))
-            obj_ids = np.unique(img)
+            obj_ids = np.unique(img, axis=0)
             #if 0 in obj_ids:
             #    obj_ids.remove(0)
             images_to_consider = min([images_to_consider, len(data[scene]['annotations'][entry_point:])-1])
             lock = Lock()
             threads = []
-            for obj in obj_ids:
+            for obj_code in obj_ids:
+                obj = lookup[tuple(obj_code)]
                 iou_dict[scene][entry_point][obj] = []
+                gold_iou_dict[scene][entry_point][obj] = []
                 gold_stop_track_dict[scene][entry_point][obj] = []
                 estimate_gold_stop_track_dict[scene][entry_point][obj] = []
                 pred_stop_track_dict[scene][entry_point][obj] = []
 
-                t = threading.Thread(target=track_object, args=(lock,autoencoder, entry_point, thr, model, hp, scene, obj, data, images_to_consider, output_dir, \
-                pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict, iou_dict))
+                t = threading.Thread(target=track_object, args=(lock,autoencoder, entry_point, thr, model, hp, scene, obj_code, data, images_to_consider, output_dir, \
+                pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict, iou_dict, gold_iou_dict))
                 threads.append(t)
             for t in threads:
                 t.start()
             for t in threads:
                 t.join()
+        gold_iou_dict = pickle.load(open(args.dataset+"_pickle_files/"+output_dir + "_gold_iou_dict.pickle", "rb"))
         iou_dict = pickle.load(open(args.dataset+"_pickle_files/"+output_dir + "_iou_dict.pickle", "rb"))
         stop_track_dict = pickle.load(open(args.dataset+"_pickle_files/"+output_dir + "_iou_pred_stop_track_dict.pickle", "rb"))
+        
         #mask_dict = pickle.load(open(args.dataset+"_pickle_files/estimate_gold_"+output_dir+".pickle", "rb"))
+        '''
         for entry_point in entry_points:
             if entry_point in iou_dict[scene]: 
                 #object_ious = {lookup[key]:[0,0] for key in lookup.keys()}
@@ -380,13 +409,14 @@ def eval_iou(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_enab
                         print("Object: ", obj, " seen ", object_ious[obj][0], " times with mean IoU: ", object_ious[obj][1]/object_ious[obj][0])
                     else: 
                         print("Object: ", obj, " seen ", object_ious[obj][0], " times with mean IoU: ", 0)
+    '''
     return iou_dict, stop_track_dict
 
 def main():
     global args, logger
     args = parser.parse_args()
-    args.eval_config = 'configs/a2d2_autoencoder.yaml'
     args = load_eval_config(args)
+    #args.seed = 69
     cfg = load_config(args)
     init_log('global', logging.INFO)
     logger = logging.getLogger('global')
@@ -436,3 +466,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               

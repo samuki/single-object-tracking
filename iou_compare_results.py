@@ -83,14 +83,9 @@ def avg_track_length(st1, st2):
     track_length_st1= []
     track_length_st2= []
     for scene in st1: 
-        for entry_point in st1[scene]:
-            for obj in st1[scene][entry_point]:
-                if not st1[scene][entry_point][obj] ==[]:
-                    track_length_st1.append(st1[scene][entry_point][obj][0])
-                    if not st2[scene][entry_point][obj] == []: 
-                        track_length_st2.append(st2[scene][entry_point][obj][0])
-                    else: 
-                        track_length_st2.append(st1[scene][entry_point][obj][0])
+        for obj in st1[scene]:
+            track_length_st1.append(st1[scene][obj])
+            track_length_st2.append(st2[scene][obj])
     return sum(track_length_st1)/len(track_length_st1), sum(track_length_st2)/len(track_length_st2)
 
 def compare_iou(iou_dict1, iou_dict2, lookup):
@@ -141,12 +136,6 @@ def main():
         else:
             print(lookup[obj], " no true positives")
     """
-    #iou_dict1 =  pickle.load(open(dir1+"iou_dict.pickle", "rb"))
-    #iou_dict2 =  pickle.load(open(dir2+"iou_dict.pickle", "rb"))
-    #iou_dict3 = pickle.load(open(dir3+"iou_dict.pickle", "rb"))
-    #compare_iou(iou_dict1, iou_dict2, lookup)
-    #compare_iou(iou_dict1,convert_iou_object_dict(iou_dict3), lookup)
-    #tl1, tl2 = avg_track_length(st1, st2)
     #print("len st1: ", sum(track_length_st1)/len(track_length_st1))
     #print("len st2: ", sum(track_length_st2)/len(track_length_st2))
 
@@ -162,74 +151,81 @@ def main():
     #mode = "autoencoder0.7196"
     #mode = "score09"
     mode = "ssim"
-    #thrs= [0.05,0.1,0.15,0.2,0.25,0.30,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,0.98]
-    thrs = [0.25, 0.3,0.4,0.45,0.5,0.6,0.65]
+    #mode = "pretrained_autoenc0.9"
+    #mode = "ssim0.5"
+    #mode = "score0.8"
+    #mode = 'confidence_score0.95'
+    #mode = "baseline1"
+    #mode = "pretrained_autoenc0.9"
+    thrs= [0.05,0.1,0.15,0.2,0.25,0.30,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,0.98]
+    #thrs= [0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,0.98]
+    #thrs = [0.85,0.9,0.95,0.98]
+    #thrs = [0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4]
+    thrs = [0.25]
+    #mode = 'pretrained_autoencoder'
+    #mode = 'pretrained_autoencoder'
+    #mode = 'autoencoder'
     mode = 'confidence_score'
     #mode = 'constant'
     dataset = 'a2d2'
-    for thr in thrs:
-        print("Thr: ", thr)
-        experiment_string5 = dataset+'8'+ mode+str(thr)
-        experiment_string6 = dataset  +'_69'+mode+str(thr)
-        # autoencoder
-        #experiment_string5 = dataset+'8'+mode+str(thr)
-        #experiment_string6 = dataset  +mode+str(thr)
-        # kitti autoencoder
-        #experiment_string5 = dataset+'8'+mode+str(thr)
-        #experiment_string6 = dataset+'69'+mode+str(thr)
-        #experiment_string7 = mode+str(thr)
-        #experiment_string6 = mode+str(thr)
-        experiment_strings = [experiment_string5, experiment_string6]
-        precisions, recalls, f_measures, uprecisions, urecalls, uf_measures = [],[],[],[],[],[]
-        for experiment_string in experiment_strings: 
-            kitti_st1 = pickle.load(open(dataset+"_pickle_files/gold_"+experiment_string+".pickle", "rb"))
-            kitti_st2 = pickle.load(open(dataset+"_pickle_files/pred_"+experiment_string+".pickle", "rb"))
-            kitti_st3 = pickle.load(open(dataset+"_pickle_files/estimate_gold_"+experiment_string+".pickle", "rb"))
-            kitti_st1 = convert_kitti_dict(kitti_st1)
-            kitti_st2 = convert_kitti_dict(kitti_st2)
-            kitti_st3 = convert_kitti_dict(kitti_st3)
-            #upp_b_precision= compute_object_wise_precision_recall(kitti_st1, kitti_st3)
-            #object_dict = compute_object_wise_precision_recall(kitti_st1, kitti_st2)    
-            upp_b_precision, upp_b_recall = compute_precision_recall(kitti_st1, kitti_st3)
-            #print('normal p, r')
-            precision, recall = compute_precision_recall(kitti_st1, kitti_st2)
-            """
-            for obj in object_dict:
-                print("INSTANCES ", object_dict[obj]["tp"]+object_dict[obj]["fn"]+object_dict[obj]["fp"])
-                if object_dict[obj]["tp"] != 0:
-                    obj_precision = object_dict[obj]["tp"]/(object_dict[obj]["tp"]+object_dict[obj]["fp"])
-                    obj_recall = object_dict[obj]["tp"]/(object_dict[obj]["tp"]+object_dict[obj]["fn"])
-                    print(obj, " precision: ", obj_precision)
-                    print(obj, " recall: ", obj_recall)
-                    print("f-measure: ", 2*(obj_precision*obj_recall)/(obj_precision+obj_recall))
-
-                else:
-                    print(obj, " no true positives")
-            """
-            if precision == 0 or recall == 0:
-                f_measure = 0 
-            else:
-                f_measure = 2*(precision*recall)/(precision+recall)
-            if upp_b_precision == 0 or upp_b_recall == 0: 
-                upp_b_f_measure=0
-            else:
-                upp_b_f_measure = 2*(upp_b_precision*upp_b_recall)/(upp_b_precision+upp_b_recall) 
-            precisions.append(precision)
-            recalls.append(recall)
-            f_measures.append(f_measure)
-            urecalls.append(upp_b_recall)
-            uprecisions.append(upp_b_precision)
-            uf_measures.append(f_measure)
-            print('average track length ', avg_track_length(kitti_st1, kitti_st2))
-        #print(urecalls)
-        print("Mode: ", mode)
-        print("Upper bound Precision: ", np.mean(uprecisions), ' ', np.std(uprecisions))
-        print("Upper bound Recall: ", np.mean(urecalls), ' ', np.std(urecalls))
-        print("Upper bound F: ", np.mean(uf_measures), ' ', np.std(uf_measures))
-        print("Precision: ", np.mean(precision), ' ', np.std(precisions))
-        print("Recall: ", np.mean(recalls), ' ', np.std(recalls))
-        print("F: ", np.mean(f_measures), ' ', np.std(f_measures))
+    if dataset == 'a2d2':
+        instance_dict = {
+        "cars": 1,
+        "pedestrians": 2,
+        "trucks": 3,
+        "smallVehicle": 4,
+        "utilityVehicle": 5,
+        "bicycle": 6,
+        "tractor": 7
+        }
+    else: 
+        instance_dict = {'cars': 1,
+                'pedestrian': 2}
+    inverted_instance_dict = {val:key for key, val in instance_dict.items()}
+    object_wise_iou = {obj: [] for obj in instance_dict}
+    total_iou = []
+    number_of_instances = {obj: [] for obj in instance_dict}
+    number_of_instances['total'] = []
+    ##iou_dict1 =  pickle.load(open(dir1+"iou_dict.pickile", "rb"))
+    #iou_dict2 =  pickle.load(open(dir2+"iou_dict.pickle", "rb"))
+    #iou_dict3 = pickle.load(open(dir3+"iou_dict.pickle", "rb"))
+    #compare_iou(iou_dict1, iou_dict2, lookup)
+    experiment_string6 = dataset+'42ssim0.8_gold_iou_dict.pickle'
+    experiment_string7 = dataset+'8ssim0.8_gold_iou_dict.pickle'
+    experiment_string8 = dataset+'69ssim0.8_gold_iou_dict.pickle'
+    #experiment_string5 = dataset+'42ssim0.8_gold_iou_dict.pickle'
+    #experiment_string6 = dataset+'8confidence_score0.75_gold_iou_dict.pickle'
+    #experiment_string7 = dataset+'42confidence_score0.75_gold_iou_dict.pickle'
+    #experiment_string8 = dataset+'69confidence_score0.75_gold_iou_dict.pickle'
+    experiment_strings = [experiment_string6, experiment_string7, experiment_string8]
+    for experiment_string in experiment_strings: 
+        iou_dict = pickle.load(open(dataset+"_pickle_files/"+experiment_string, 'rb'))
+        #gold_iou_dict = pickle.load(open(dataset+"_pickle_files/"+experiment_string6, 'rb'))
+        #print('normal  ', iou_dict)
+        #print('gold ', gold_iou_dict)
+        for scene in iou_dict:
+            for entry_point in iou_dict[scene]:
+                for obj in iou_dict[scene][entry_point]:
+                    if obj != 0:
+                        #print(iou_dict[scene][entry_point][obj])
+                        total_iou.append(iou_dict[scene][entry_point][obj][0][0])
+                        obj_string = inverted_instance_dict[int(str(obj)[0])]
+                        object_wise_iou[obj_string].append(iou_dict[scene][entry_point][obj][0][0])
         
+        for obj in object_wise_iou:
+            number_of_instances[obj].append(len(object_wise_iou[obj]))
+        number_of_instances['total'].append(len(total_iou))
+    
+    
+    for obj in object_wise_iou:
+        print(obj, ':')
+        if object_wise_iou[obj] != []:
+            print(np.mean(np.array(number_of_instances[obj])), np.std(np.array(number_of_instances[obj])),np.mean(np.array(object_wise_iou[obj])), np.std(np.array(object_wise_iou[obj])))
+        else: 
+            print(0,0,0)
+    print('Total:')
+    print(np.mean(np.array(number_of_instances['total'])), np.std(np.array(number_of_instances['total'])), np.mean(np.array(total_iou)), np.std(np.array(total_iou)))
+    
 
 
 if __name__ == "__main__":

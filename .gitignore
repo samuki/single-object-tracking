@@ -12,3 +12,5 @@ pickle_files
 #other 
 car_recognition.pt
 kiegeland@cluster.cl.uni-heidelberg.de/
+
+configs/*

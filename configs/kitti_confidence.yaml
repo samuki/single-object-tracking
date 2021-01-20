@@ -3,7 +3,6 @@
 siammask_config: "../SiamMask/experiments/siammask_sharp/config_davis.json"
 checkpoint: "../SiamMask/experiments/siammask_sharp/SiamMask_DAVIS.pth"
 arch: ""
-mode: "end_of_track"
 dataset: "kitti"
 datapath: "../../Uni/9.Semester/Object_tracking/kitti/"
 similarity: "confidence_score"

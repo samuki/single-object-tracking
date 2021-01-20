@@ -92,33 +92,29 @@ def shuffle_data(data, max_images, seed=42):
 def load_a2d2(path):
     data = OrderedDict()
     data_path = path+'camera_lidar_semantic'
-    total_length={'annotations': 0, 'semantic': 0, 'camera': 0}
-    #instance_path = path+'camera_lidar_semantic_instance'
-    instance_path = '../../Uni/9.Semester/Object_tracking/'+'camera_lidar_semantic_instance'
+    instance_path = path+'camera_lidar_semantic_instance'
     for scene in listdir(data_path):
         if isdir(join(data_path, scene)):
             # TODO: generalize to all subfolders
             data[scene] = {}
-            data[scene]['annotations'] = sorted(glob.glob(join(instance_path,scene,  'instance/cam_front_center', '*.png')))
-            data[scene]['semantic'] = sorted(glob.glob(join(data_path,scene, 'label/cam_front_center', '*.png')))
+            data[scene]['semantic'] = sorted(glob.glob(join(instance_path,scene,  'instance/cam_front_center', '*.png')))
+            data[scene]['annotations'] = sorted(glob.glob(join(data_path,scene, 'label/cam_front_center', '*.png')))
             data[scene]['camera'] = sorted(glob.glob(join(data_path,scene,  'camera/cam_front_center', '*.png')))
-            total_length['annotations'] += len(data[scene]['annotations'])
-            total_length['camera'] += len(data[scene]['camera'])
-            total_length['semantic'] += len(data[scene]['semantic'])
             delete_these = []
-
             for index, img in enumerate(data[scene]['camera']):
                 split =img.split('/')
+                #print(split)
+                #print(data[scene]['annotations'][index])
                 #print('/'.join([instance_path]+[split[5]]+['instance']+[split[7]]+[img.split('/')[-1].replace('camera', 'instance')]))
                 #print(data[scene]['annotations'][index])
-                if '/'.join([instance_path]+[split[5]]+['instance']+[split[7]]+[img.split('/')[-1].replace('camera', 'instance')]) not in data[scene]['annotations']:
+                if '/'.join([instance_path]+[split[3]]+['instance']+[split[5]]+[img.split('/')[-1].replace('camera', 'instance')]) not in data[scene]['semantic']:
                     delete_these.append(index)
             for index in sorted(delete_these, reverse=True):
-                del data[scene]['semantic'][index] 
+                del data[scene]['annotations'][index] 
                 del data[scene]['camera'][index]
-            assert(len(data[scene]['annotations']) == len(data[scene]['camera']))
             assert(len(data[scene]['semantic']) == len(data[scene]['camera']))
-    print('total length: ', total_length)
+            assert(len(data[scene]['annotations']) == len(data[scene]['camera']))
+            print("len ", len(data[scene]['semantic']))
     return data
 
 def load_eval_config(args):
@@ -135,7 +131,7 @@ def load_eval_config(args):
     args.datapath = eval_config['datapath']
     args.similarity = eval_config['similarity']
     args.thresholds = eval_config['thresholds']
-    args.mode = eval_config['mode']
+    args.mode = eval_config.get('mode', 'end_of_track')
     args.autoencoder_classes = eval_config['autoencoder_classes']
     args.seed = eval_config['seed']
     args.random_entries = eval_config['random_entries']

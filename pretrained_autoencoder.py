@@ -44,6 +44,7 @@ class CarRecognitionModel(nn.Module):
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, images):
+        print(images.shape)
         x = self.resnet(images)  # [N, 2048, 1, 1]
         #x = self.pool(x)
         x = x.view(-1, 2048)  # [N, 2048]

@@ -1,7 +1,8 @@
 import torchvision.models as models
 import pytorch_lightning as pl
 from torch import nn
-import torch 
+import torch
+
 class ImagenetTransferAutoencoder(pl.LightningModule):
     def __init__(self, num_classes):
         super().__init__()
@@ -20,5 +21,6 @@ class ImagenetTransferAutoencoder(pl.LightningModule):
         self.feature_extractor.eval()
         with torch.no_grad():
             representations = self.feature_extractor(x).flatten(1)
-        x = self.classifier(representations)
-        return x 
+        #x = self.classifier(representations)
+        #return x 
+        return representations
