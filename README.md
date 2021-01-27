@@ -1,6 +1,6 @@
 # Evalutating Single Object Tracking For Autonomous Driving
 
-<img src="tracker_jumps.png" width="200" /> <img src="tracker_jumps2.png" width="200" /> <img src="tracker_jumps3.png" width="200" />
+<img src="tracker_jumps.png" width="250" /> <img src="tracker_jumps2.png" width="250" /> <img src="tracker_jumps3.png" width="250" />
 
 Detailed description following soon!
 
