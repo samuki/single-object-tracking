@@ -9,18 +9,23 @@ The goal was to test, how applicable SiamMask to the task of tracking individual
 
 The tracker can be evaluated by using the semantic segmentation and instance segmentation images which were provided by human annotators: 
 
+<p align="center">
 <img src="images/20181107133258_camera_frontcenter_000000250.png" width="250" /> <img src="images/20181107133258_instance_frontcenter_000000250.png" width="250" /> <img src="images/20181107133258_label_frontcenter_000000250.png" width="250" />
+</p>
 
 In the A2D2, only a subset of the video frames is annotated with segmentations.
 This leads to fail cases where the tracker switches to other objects, if the gap between the scene displayed in two consequtive frames is too big:  
+
+<p align="center">
 <img src="images/tracker_jumps.png" width="250" /> <img src="images/tracker_jumps2.png" width="250" /> <img src="images/tracker_jumps3.png" width="250" />
 <img src="images/mf2.png" width="250" /> <img src="images/mf3.png" width="250" /> <img src="images/mf4.png" width="250" />
+</p>
 
 For details see the whole [report](Kiegeland_Project_Report.pdf)
 
-
+<p align="center">
 <img src="images/8.png" width="250" /> <img src="images/9.png" width="250" /> <img src="images/10.png" width="250" />
-
+</p>
 
 How to use the GUI: 
 
