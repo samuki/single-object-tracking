@@ -21,4 +21,4 @@ wget http://www.robots.ox.ac.uk/~qwang/SiamMask_DAVIS.pth
 export PYTHONPATH=$PWD:$PYTHONPATH
 
 cd ../../../
-pip install -r requirements.txt
+pip install -r --use-feature=2020-resolver requirements.txt
