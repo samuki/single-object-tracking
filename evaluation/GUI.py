@@ -23,8 +23,6 @@ import imagehash
 import sys
 sys.path.append("../SiamMask")
 
-#from SiamMask import utils
-
 from utils.log_helper import init_log, add_file_handler
 from utils.load_helper import load_pretrain
 from utils.bbox_helper import get_axis_aligned_bbox, cxy_wh_2_rect

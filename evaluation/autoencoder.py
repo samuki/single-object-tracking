@@ -21,6 +21,4 @@ class ImagenetTransferAutoencoder(pl.LightningModule):
         self.feature_extractor.eval()
         with torch.no_grad():
             representations = self.feature_extractor(x).flatten(1)
-        #x = self.classifier(representations)
-        #return x 
         return representations

@@ -20,7 +20,6 @@ def compare_iou(iou_dict1, iou_dict2, lookup):
                 print(obj, " seen ", 0, " times with mean IoU: ", 0)
 
 def main():
-    
     mode = "ssim"
     #thrs= [0.05,0.1,0.15,0.2,0.25,0.30,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,0.98]
     thrs = [0.25]

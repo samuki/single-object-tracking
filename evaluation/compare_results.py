@@ -3,7 +3,6 @@ import json
 from PIL import Image, ImageColor
 import numpy as np
 
-
 def compute_precision_recall(st1, st2):
     false_positives = 0 
     false_negatives = 0
@@ -41,7 +40,6 @@ def convert_kitti_dict(st):
                 else:
                     st[scene][obj] = st[scene][obj][0]
     return st
-
 
 def compute_object_wise_precision_recall(st1, st2):
     instance_dict = {
@@ -150,3 +148,4 @@ def main():
         
 if __name__ == "__main__":
     main()
+    
