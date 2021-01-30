@@ -126,5 +126,4 @@ scipy==1.1.0
 h5py==2.8.0
 pandas==0.23.4
 tensorboardX==1.6
-opencv_python==3.4.3.18
 torchvision==0.2.1

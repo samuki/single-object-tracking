@@ -135,8 +135,8 @@ class App(QMainWindow):
         btn.resize(btn.minimumSizeHint())
         btn.move(0,self.window_height-40)
 
-        extractAction = QtWidgets.QAction(QtGui.QIcon('todachoppa.png'), 'Flee the Scene', self)
-        extractAction.triggered.connect(self.close_application)
+        #extractAction = QtWidgets.QAction(QtGui.QIcon('todachoppa.png'), 'Flee the Scene', self)
+        #extractAction.triggered.connect(self.close_application)
         self.show()
 
     def file_open(self):
@@ -239,33 +239,6 @@ class App(QMainWindow):
         mask_sum = predicted_mask + current_all_instances_mask
         intersec = np.sum(mask_sum[mask_sum==2])
         score = 1
-        stop_track_flag = False
-        # calculate stop track: currently broken 
-        """
-        if index >1:
-            # compare images
-            current_location = state['minAreaRect']
-            prev_state = self.collect_states[-1]
-            prev_location = prev_state['minAreaRect']
-            if len(current_location) == len(prev_location) == 3: 
-                current_im = im 
-                current_cropped_image = crop_minAreaRect(current_im, current_location)
-                prev_im = self.precalc_track[index-1]["im"]
-                #prev_cropped_image = self.crop_minAreaRect(cv2.cvtColor(prev_im, cv2.COLOR_BGR2GRAY), prev_location)
-                prev_cropped_image = crop_minAreaRect(prev_im, prev_location)
-                common_size = (150, 150)
-                try:
-                    prev_cropped_image= cv2.resize(prev_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
-                    current_cropped_image = cv2.resize(current_cropped_image,common_size, interpolation=cv2.INTER_CUBIC)
-
-                    score, diff = structural_similarity(prev_cropped_image, current_cropped_image, full=True, multichannel=True)
-                except Exception as e:
-                    score=1.0
-            stop_track_flag = False
-            if intersec == 0:
-                predicted_classes = np.unique(current_anno[predicted_mask == 1], axis=0)
-                stop_track_flag = True
-        """
         self.precalc_track[index] = {}
         self.precalc_track[index]["im"] = im
         self.precalc_track[index]["state"] = state
@@ -293,11 +266,6 @@ class App(QMainWindow):
                 self.display_stop_track.setText("Stop track!")
                 self.display_stop_track.setGeometry(30, self.display_height+150, 250, 50)
                 self.display_stop_track.show()
-            # adjust threshold
-            #if score < 0.35 and self.pic_index > 1:
-                #print("STOP TRACK LOW SIM")
-            #current_rgbs = np.unique(current_anno, axis=0)
-            print(state['score'])
             self.display_iou.clear()
             self.display_iou.setText("IoU: " +str(round(iou, 3)))
             self.display_iou.setGeometry(30, self.display_height+100, 250, 50)
@@ -410,8 +378,7 @@ class App(QMainWindow):
         save_data["image"] = im
         save_data["duplicates"] = rgb_duplicates
         save_data["masks"] = mask_coordinates
-        pickle.dump(save_data, open(pickle_dir+self.file_name+".pickle", "wb"))
-    return im, duplicates, mask_coordinates
+        return im, duplicates, mask_coordinates
         
     def load_dataset(self, path):
         data = OrderedDict()
