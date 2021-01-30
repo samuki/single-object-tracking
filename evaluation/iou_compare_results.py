@@ -1,3 +1,13 @@
+"""Calculate mean IoU.
+
+This script was used to calculate the object wise mean IoU 
+given the pickled output files from evaluate dataset. 
+The paths to the pickle files are specified down in the main
+
+Example:
+    $ python iou_compare_resuslts.py
+"""
+
 import pickle
 import json
 from PIL import Image, ImageColor

@@ -3,7 +3,7 @@ import glob
 import json
 import pickle
 import threading
-from multiprocessing import Process, Lock
+from multiprocessing import Lock
 import logging
 import argparse
 from collections import OrderedDict
@@ -22,10 +22,9 @@ import scipy.misc
 
 from skimage.metrics import structural_similarity
 
-# own imports 
+# imports from this repository 
 from utility import *
 from autoencoder import ImagenetTransferAutoencoder
-#from pretrained_autoencoder import init_autoencoder, pretrained_autoencoder_similarity
 
 # SiamMask imports
 sys.path.append("../SiamMask")
@@ -68,9 +67,20 @@ parser.add_argument('--frames_per_entry', dest='frames_per_entry', default=50,
 
 
 def MultiBatchIouMeter(thrs, outputs, targets, rgb, end_tracks, start=None, end=None):
-    #targets = np.array(targets)
+    
+    """Calculates mean IoU for a tracking scenario.
+
+    Parameters:
+        thrs (List): list of thresholds for the mask
+        outputs (list): list of generated masks
+        targets (list): list of target annotation images
+        rgb (list): list of rgb values that represent the target object
+
+    Returns:
+        res (list): list of mean IoU scores
+    """
+
     outputs = np.array(outputs)
-    #num_frame = targets.shape[0]
     num_object = len(rgb)
     res = np.zeros((num_object, len(thrs)), dtype=np.float32)
     output_max_id = np.argmax(outputs, axis=0).astype('uint8')+1
@@ -79,8 +89,6 @@ def MultiBatchIouMeter(thrs, outputs, targets, rgb, end_tracks, start=None, end=
         output_thr = outputs_max > thr
         for j in range(num_object):
             target_j = targets[j]
-            #target_j = [np.logical_and.reduce(target == rgb[j], axis = -1) for target in targets[j]]
-            #target_j = [target[target == rgb[j]] for target in targets]
             start_frame = 0
             end_frame = end_tracks[j]
             iou = []
@@ -89,8 +97,6 @@ def MultiBatchIouMeter(thrs, outputs, targets, rgb, end_tracks, start=None, end=
                 current_instance_mask = anno_array
                 current_instance_mask[current_instance_mask == rgb[j]] = 1
                 pred = (output_thr[i] * output_max_id[i])==(j+1)
-                #print('tg ', np.nonzero(current_instance_mask))
-                #print('pd ', np.nonzero(pred))
                 mask_sum = (pred == 1).astype(np.uint8) + (current_instance_mask > 0).astype(np.uint8)
                 intxn = np.sum(mask_sum == 2)
                 union = np.sum(mask_sum > 0)
@@ -99,7 +105,6 @@ def MultiBatchIouMeter(thrs, outputs, targets, rgb, end_tracks, start=None, end=
 
                 elif union == 0 and intxn == 0:
                     iou.append(1)
-            #avg = np.mean(iou)
             res[j, k] = np.mean(iou)
     return res
 
@@ -132,7 +137,6 @@ def autoencoder_similarity(autoencoder, current_cropped, prev_cropped_tracks, pr
     current_feature_vec = encoding_pipeline(current_cropped, preprocess)    
     cossim = torch.nn.CosineSimilarity()
     sim = cossim(current_feature_vec, prev_feature_vec)
-    #print("sim ", sim)
     return tensor_to_float(sim), prev_cropped_tracks
 
 def ssim(prev_cropped_image, current_cropped_image):
@@ -147,8 +151,15 @@ def ssim(prev_cropped_image, current_cropped_image):
         score=1.0
     return score
 
-def track_object(lock, autoencoder, entry_point, thr,model, hp, scene, obj_code, data, images_to_consider, output_dir, pred_stop_track_dict, gold_stop_track_dict, estimate_gold_stop_track_dict, iou_dict,gold_iou_dict,
+def track_object(lock, autoencoder, entry_point, thr,model, hp, scene, obj_code, data, images_to_consider, output_dir, pred_stop_track_dict,
+ gold_stop_track_dict, estimate_gold_stop_track_dict, iou_dict,gold_iou_dict,
                 mask_enable=True, refine_enable=True, device='cpu'):
+
+    """Main function that gets called to calculate the masks.
+    
+    Saves the results to a pickle file.
+    """
+
     prev_feature = None
     current_annos = data[scene]['annotations'][entry_point:entry_point+images_to_consider]
     current_images = data[scene]['camera'][entry_point:entry_point+images_to_consider]
@@ -255,7 +266,22 @@ def track_object(lock, autoencoder, entry_point, thr,model, hp, scene, obj_code,
         pickle.dump(gold_iou_dict, open(args.dataset+"_pickle_files/"+output_dir + "_gold_iou_dict.pickle", "wb"))
     lock.release()
 
-def eval_end_of_track(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'):
+def eval_end_of_track(model, thr, data, hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'):
+    
+    """Evaluates the end-of-track detection
+
+    Parameters:
+        model (model): SiamMask pretrained model
+        thr (list): list of thresholds for the end-of-track detection
+        data (dict): data dictionary (A2D2 or KITTI)
+        hp (dict): model architecture
+
+    Calls track_object() with a new thread for each object 
+    
+    Returns:
+        -
+    """
+    
     gold_stop_track_dict = {}
     estimate_gold_stop_track_dict = {}
     pred_stop_track_dict = {}
@@ -264,7 +290,6 @@ def eval_end_of_track(model, thr, data,hp, mask_enable=True, refine_enable=True,
     np.random.seed(args.seed)
     num_random_entries = args.random_entries
     images_to_consider = args.frames_per_entry
-    #output_dir = args.dataset+str(args.seed)+args.similarity+str(thr)
     output_dir = args.dataset+args.similarity+str(thr)
     print("output_dir ", output_dir)
     if args.similarity == 'autoencoder':
@@ -274,10 +299,8 @@ def eval_end_of_track(model, thr, data,hp, mask_enable=True, refine_enable=True,
         autoencoder = init_autoencoder()
     else: 
         autoencoder = ''
-    #data = shuffle_data(data, images_to_consider)
     for scene in data:
         print("Scene ", scene)
-        #print(len(data[scene]['camera']))
         entry_points = np.random.randint(low=0, \
             high=len(data[scene]['camera'])-5,size=num_random_entries)
         gold_stop_track_dict[scene] = {}
@@ -320,6 +343,20 @@ def eval_end_of_track(model, thr, data,hp, mask_enable=True, refine_enable=True,
     return gold_stop_track_dict, pred_stop_track_dict
 
 def eval_iou(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'):
+    """Evaluates the IoU
+
+    Parameters:
+        model (model): SiamMask pretrained model
+        thr (list): list of optimal thresholds from the end-of-track detection
+        data (dict): data dictionary (A2D2 or KITTI)
+        hp (dict): model architecture
+
+    Calls track_object() with a new thread for each object 
+    
+    Returns:
+        -
+    """
+    
     iou_dict = {}
     gold_iou_dict = {}
     gold_stop_track_dict = {}
@@ -390,33 +427,12 @@ def eval_iou(model, thr, data,hp, mask_enable=True, refine_enable=True, mot_enab
         gold_iou_dict = pickle.load(open(args.dataset+"_pickle_files/"+output_dir + "_gold_iou_dict.pickle", "rb"))
         iou_dict = pickle.load(open(args.dataset+"_pickle_files/"+output_dir + "_iou_dict.pickle", "rb"))
         stop_track_dict = pickle.load(open(args.dataset+"_pickle_files/"+output_dir + "_iou_pred_stop_track_dict.pickle", "rb"))
-        
-        #mask_dict = pickle.load(open(args.dataset+"_pickle_files/estimate_gold_"+output_dir+".pickle", "rb"))
-        '''
-        for entry_point in entry_points:
-            if entry_point in iou_dict[scene]: 
-                #object_ious = {lookup[key]:[0,0] for key in lookup.keys()}
-                object_ious = {cl:[0,0] for cl in instance_dict}
-                inverted_instances = {v: k for k, v in instance_dict.items()}
-                for obj in iou_dict[scene][entry_point]:
-                    if obj != 0 and obj != 1:
-                        cl = inverted_instances[int(str(obj)[0])]
-                        object_ious[cl][0] +=1
-                        object_ious[cl][1] +=iou_dict[scene][entry_point][obj]
-                print("Current object mean IoU: ")
-                for obj in object_ious:
-                    if object_ious[obj][0] != 0:
-                        print("Object: ", obj, " seen ", object_ious[obj][0], " times with mean IoU: ", object_ious[obj][1]/object_ious[obj][0])
-                    else: 
-                        print("Object: ", obj, " seen ", object_ious[obj][0], " times with mean IoU: ", 0)
-    '''
     return iou_dict, stop_track_dict
 
 def main():
     global args, logger
     args = parser.parse_args()
     args = load_eval_config(args)
-    #args.seed = 69
     cfg = load_config(args)
     init_log('global', logging.INFO)
     logger = logging.getLogger('global')
@@ -447,7 +463,6 @@ def main():
         for thr in args.thresholds:
             t = threading.Thread(target=eval_iou, args=(model, thr, data, cfg["hp"]))
             threads.append(t)
-            #eval_kitti(model, thr, data, cfg["hp"])
         for t in threads:
             t.start()
         for t in threads:
@@ -458,7 +473,6 @@ def main():
         for thr in args.thresholds:
             t = threading.Thread(target=eval_end_of_track, args=(model, thr, data, cfg["hp"]))
             threads.append(t)
-            #eval_kitti(model, thr, data, cfg["hp"])
         for t in threads:
             t.start()
         for t in threads:
@@ -466,4 +480,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               

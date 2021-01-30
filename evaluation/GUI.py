@@ -17,7 +17,6 @@ import scipy.misc
 from skimage.metrics import structural_similarity
 import pickle
 import threading
-from skimage.measure import compare_ssim
 import imagehash
 
 import sys
@@ -73,7 +72,6 @@ class App(QMainWindow):
         # Variables for GUI creation 
         self.window_width = 1400
         self.window_height = 900
-
         self.display_width = self.window_width-300
         self.display_height = self.window_height-300
 
@@ -289,9 +287,7 @@ class App(QMainWindow):
                 stop_track_flag = self.precalc_track[self.pic_index]["stop_track"]
                 score = self.precalc_track[self.pic_index]["similarity"]
             else:
-                #self.lock.acquire()
                 im, state, qt_img, iou, stop_track_flag, score = self.single_step_object_track(state, rgb_code, self.pic_index) 
-                #self.lock.release()
             self.collect_states.append(state)
             if stop_track_flag:
                 self.display_stop_track.setText("Stop track!")
@@ -382,66 +378,51 @@ class App(QMainWindow):
         return max(ious)
 
     def display_object_bb(self,mask_enable=True, refine_enable=True, mot_enable=False, device='cpu'):
-        pickle_dir = 'init_bb/' 
-        os.makedirs(os.path.dirname(pickle_dir), exist_ok=True) 
-        if os.path.exists(pickle_dir+self.file_name+".pickle"):
-            loaded_data = pickle.load(open(pickle_dir+self.file_name+".pickle", "rb"))
-            im = loaded_data["image"] 
-            duplicates = loaded_data["duplicates"]
-            mask_coordinates = loaded_data["masks"]
-        else:
-            annotations = [self.anno_path]
-            color_array = [np.array(Image.open(x)) for x in annotations]
-            reshaped_array = color_array[0].reshape((color_array[0].shape[0]* color_array[0].shape[1], 3))
-            rgb = np.unique(reshaped_array, axis=0)
-            color_track = [annotation.astype(np.uint8) for annotation in color_array]
-            mask_coordinates = []
-            im = cv2.imread(self.path)
-            rgb_duplicates = []
-            for object_index, code in enumerate(rgb): 
-                mask = np.logical_and.reduce(color_track[0] == code, axis = -1)
-                label_im = mask
-                nb_labels = 1
-                rgb_tuple = (int(code[0]), int(code[1]), int(code[2]))
-                object_name = self.lookup[rgb_tuple]
-                # TODO find alternative to heuristic
-                relvevant_objects = ["Car", "vehicle", "Truck", "Pedestrian", "Bicycle"]
-                for obj in relvevant_objects:
-                    if obj in object_name:
-                        label_im, nb_labels = ndimage.label(mask)
-                for counter in range(nb_labels):
-                    compare_mask = np.full(np.shape(label_im), counter+1)
-                    mask = np.equal(label_im, compare_mask).astype(int)
-                    x, y, w, h = cv2.boundingRect((mask).astype(np.uint8))
-                    mask_coordinates.append(mask)
-                    cv2.rectangle(im,(x,y),(x+w,y+h), rgb_tuple, 3)
-                    rgb_duplicates.append(code)
-            duplicates = np.array(rgb_duplicates)
-            # save calculation
-            save_data = {}
-            save_data["image"] = im
-            save_data["duplicates"] = rgb_duplicates
-            save_data["masks"] = mask_coordinates
-            pickle.dump(save_data, open(pickle_dir+self.file_name+".pickle", "wb"))
-        return im, duplicates, mask_coordinates
+        annotations = [self.anno_path]
+        color_array = [np.array(Image.open(x)) for x in annotations]
+        reshaped_array = color_array[0].reshape((color_array[0].shape[0]* color_array[0].shape[1], 3))
+        rgb = np.unique(reshaped_array, axis=0)
+        color_track = [annotation.astype(np.uint8) for annotation in color_array]
+        mask_coordinates = []
+        im = cv2.imread(self.path)
+        rgb_duplicates = []
+        for object_index, code in enumerate(rgb): 
+            mask = np.logical_and.reduce(color_track[0] == code, axis = -1)
+            label_im = mask
+            nb_labels = 1
+            rgb_tuple = (int(code[0]), int(code[1]), int(code[2]))
+            object_name = self.lookup[rgb_tuple]
+            # TODO find alternative to heuristic
+            relvevant_objects = ["Car", "vehicle", "Truck", "Pedestrian", "Bicycle"]
+            for obj in relvevant_objects:
+                if obj in object_name:
+                    label_im, nb_labels = ndimage.label(mask)
+            for counter in range(nb_labels):
+                compare_mask = np.full(np.shape(label_im), counter+1)
+                mask = np.equal(label_im, compare_mask).astype(int)
+                x, y, w, h = cv2.boundingRect((mask).astype(np.uint8))
+                mask_coordinates.append(mask)
+                cv2.rectangle(im,(x,y),(x+w,y+h), rgb_tuple, 3)
+                rgb_duplicates.append(code)
+        duplicates = np.array(rgb_duplicates)
+        # save calculation
+        save_data = {}
+        save_data["image"] = im
+        save_data["duplicates"] = rgb_duplicates
+        save_data["masks"] = mask_coordinates
+        pickle.dump(save_data, open(pickle_dir+self.file_name+".pickle", "wb"))
+    return im, duplicates, mask_coordinates
         
-    # TODO: find right size for test data
     def load_dataset(self, path):
         data = OrderedDict()
         for scene in listdir(path):
-            # TODO: generalize to all subfolders
             data[scene] = {}
-            #print("Path: ", join(path,scene, 'label/cam_front_center', '*.png'))
             data[scene]['annotations'] = sorted(glob.glob(join(os.path.abspath(path),scene, 'label/cam_front_center', '*.png')))
             data[scene]['camera'] = sorted(glob.glob(join(os.path.abspath(path),scene,  'camera/cam_front_center', '*.png')))
-            # assert images and annotations have same length
             assert(len(data[scene]['annotations']) == len(data[scene]['camera']))
         return data
 
 def main():
-    #path_to_data = "../../Uni/9.Semester/AP/dataset"
-    #model_path = "experiments/siammask_sharp/SiamMask_DAVIS.pth"
-    #config_path = "experiments/siammask_sharp/config_davis.json"
     global args, logger, v_id
     app = QApplication([])
     a = App()
