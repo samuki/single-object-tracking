@@ -21,6 +21,7 @@ import imagehash
 
 import sys
 sys.path.append("../SiamMask")
+from experiments.siammask_sharp.custom import Custom
 
 from utils.log_helper import init_log, add_file_handler
 from utils.load_helper import load_pretrain
@@ -220,6 +221,7 @@ class App(QMainWindow):
     def single_step_object_track(self, state, rgb_code, index, mask_enable=True, refine_enable=True, device='cpu'):
         im = cv2.imread(self.camera[index])
         # prevent conflict in track
+        stop_track_flag=False
         state = siamese_track(state, im, mask_enable, refine_enable, device=device)
         location = state['ploygon'].flatten()
         new_mask = state['mask'] > state['p'].seg_thr
@@ -271,14 +273,14 @@ class App(QMainWindow):
             self.display_iou.setGeometry(30, self.display_height+100, 250, 50)
             self.display_iou.show()
 
-            self.display_similarity.clear()
-            self.display_similarity.setText("Similarity: " +str(round(score, 3)))
-            self.display_similarity.setGeometry(30, self.display_height+50, 250, 50)
-            self.display_similarity.show()
+            #self.display_similarity.clear()
+            #self.display_similarity.setText("Similarity: " +str(round(score, 3)))
+            #self.display_similarity.setGeometry(30, self.display_height+50, 250, 50)
+            #self.display_similarity.show()
 
             self.image_label.setPixmap(qt_img)
         else:
-            self.display_similarity.clear()
+            #self.display_similarity.clear()
             self.display_iou.clear()
             self.display_iou.setText("End of scene")
         self.next_btn.clicked.connect(lambda: self.track_object(state, rgb_code))
