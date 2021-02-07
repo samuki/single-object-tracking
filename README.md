@@ -5,12 +5,9 @@ The goal was to test, how applicable SiamMask to the task of tracking individual
 For details see the whole [report](Report_SingleObjectTracking.pdf)
 
 The GUI in this repository can be used to visualize the application of the tracker on the A2D2, see: 
-
 <p align="center">
-<img src="images/tracking_window.png" width="250" /> <img src="images/tracking_window2.png" width="250" />
-<img src="images/tracking_window3.png" width="250" />
-
-</p>
+  <img src="gifs/gui.gif"  width="350"/>
+ </p>
 
 To download and install the repository follow the steps: 
 * Download the project 
@@ -20,13 +17,13 @@ cd SingleObjectTracking
 ```
 * Setup the environment 
 ```
-conda create -n sot 
+conda create -n sot python=3.7
 conda activate sot
 conda install pip opencv pyqt
 pip install -r requirements.txt 
 bash make.sh 
 ```
-* [Download](https://www.a2d2.audi/a2d2/en/download.html) the desired subset of the A2D2
+* [Download](https://www.a2d2.audi/a2d2/en/download.html) a subset of the A2D2
 * Start the GUI 
 
 ```
@@ -54,17 +51,17 @@ In the A2D2, only a subset of the video frames is annotated with segmentations.
 This leads to fail cases, where the tracker switches to other objects, if the gap between the scene displayed in two consecutive frames is too big:  
 
 <p align="center">
-<img src="images/mf2.png" width="250" /> <img src="images/mf3.png" width="250" /> <img src="images/mf4.png" width="250" />
+<img src="gifs/ad2d.gif" width="350" /> 
 </p>
 
 This problem does not occur, when applying the tracker on the KITTI dataset: 
 
 <p align="center">
-<img src="images/8.png" width="250" /> <img src="images/9.png" width="250" /> <img src="images/10.png" width="250" />
+<img src="gifs/kitti.gif" width="350" /> 
 </p>
 
 In this project, I tried to find similarity measures, such as using the internal similarity score of SiamMask, to predict, when the tracker fails, or the target object disappears from the scene:
 
 <p align="center">
-<img src="images/a2d2_confidence.png" width="350" /> <img src="images/kitti_confidence.png" width="350" />
+<img src="gifs/a2d2_confidence.png" width="350" /> <img src="images/kitti_confidence.png" width="350" />
 </p>
