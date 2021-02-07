@@ -1,5 +1,4 @@
-# Evalutating Single Object Tracking 
-## for Autonomous Driving Datasets
+# Single Object Tracking for Autonomous Driving Datasets
 
 In this project, I applied and evaluated Single Object Tracking by using the object tracking system [SiamMask](https://github.com/foolwood/SiamMask) on the Audi Autonomous Driving Dataset [A2D2](https://www.a2d2.audi/a2d2/en.html) and [KITTI](http://www.cvlibs.net/datasets/kitti/).  
 The goal was to test, how applicable SiamMask to the task of tracking individual vehicles in those datasets without explicitly fine-tuning it.  
@@ -59,7 +58,7 @@ This leads to fail cases, where the tracker switches to other objects, if the ga
 This problem does not occur, when applying the tracker on the KITTI dataset: 
 
 <p align="center">
-<img src="gifs/kitti.gif" width="350" /> 
+<img src="gifs/kitti.gif" width="500" /> 
 </p>
 
 In this project, I tried to find similarity measures, such as using the internal similarity score of SiamMask, to predict, when the tracker fails, or the target object disappears from the scene:
