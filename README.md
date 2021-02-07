@@ -1,4 +1,5 @@
-# Evalutating Single Object Tracking For Autonomous Driving
+# Evalutating Single Object Tracking 
+## for Autonomous Driving Datasets
 
 In this project, I applied and evaluated Single Object Tracking by using the object tracking system [SiamMask](https://github.com/foolwood/SiamMask) on the Audi Autonomous Driving Dataset [A2D2](https://www.a2d2.audi/a2d2/en.html) and [KITTI](http://www.cvlibs.net/datasets/kitti/).  
 The goal was to test, how applicable SiamMask to the task of tracking individual vehicles in those datasets without explicitly fine-tuning it.  
@@ -6,7 +7,7 @@ For details see the whole [report](Report_SingleObjectTracking.pdf)
 
 The GUI in this repository can be used to visualize the application of the tracker on the A2D2, see: 
 <p align="center">
-  <img src="gifs/gui.gif"  width="350"/>
+  <img src="gifs/gui.gif"  width="400"/>
  </p>
 
 To download and install the repository follow the steps: 
@@ -51,7 +52,8 @@ In the A2D2, only a subset of the video frames is annotated with segmentations.
 This leads to fail cases, where the tracker switches to other objects, if the gap between the scene displayed in two consecutive frames is too big:  
 
 <p align="center">
-<img src="gifs/ad2d.gif" width="350" /> 
+<img src="gifs/a2d2.gif" width="350" /> 
+  
 </p>
 
 This problem does not occur, when applying the tracker on the KITTI dataset: 
@@ -63,5 +65,5 @@ This problem does not occur, when applying the tracker on the KITTI dataset:
 In this project, I tried to find similarity measures, such as using the internal similarity score of SiamMask, to predict, when the tracker fails, or the target object disappears from the scene:
 
 <p align="center">
-<img src="gifs/a2d2_confidence.png" width="350" /> <img src="images/kitti_confidence.png" width="350" />
+<img src="images/a2d2_confidence.png" width="350" /> <img src="images/kitti_confidence.png" width="350" />
 </p>
