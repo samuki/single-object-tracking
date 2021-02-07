@@ -43,7 +43,7 @@ To evaluate SiamMask on the A2D2 or KITTI dataset, specify your own [config file
 and execute: 
 
 ```
-python evaluate_dataset.py --eval_config configs/you_config.yaml
+python evaluate_dataset.py --eval_config configs/your_config.yaml
 ```
 
 There are two evaluation modes, the IoU and the end-of-track detection.  
