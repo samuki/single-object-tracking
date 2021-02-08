@@ -60,9 +60,3 @@ This problem does not occur, when applying the tracker on the KITTI dataset:
 <p align="center">
 <img src="gifs/kitti.gif" width="500" /> 
 </p>
-
-In this project, I tried to find similarity measures, such as using the internal similarity score of SiamMask, to predict, when the tracker fails, or the target object disappears from the scene:
-
-<p align="center">
-<img src="images/a2d2_confidence.png" width="350" /> <img src="images/kitti_confidence.png" width="350" />
-</p>
