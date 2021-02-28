@@ -12,8 +12,8 @@ The GUI in this repository can be used to visualize the application of the track
 To download and install the repository follow the steps: 
 * Download the project 
 ```
-git clone https://github.com/samukie/SingleObjectTracking
-cd SingleObjectTracking
+git clone https://github.com/samukie/single-object-tracking.git
+cd single-object-tracking
 ```
 * Setup the environment 
 ```
