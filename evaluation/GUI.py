@@ -21,7 +21,7 @@ import imagehash
 
 import sys
 sys.path.append("../SiamMask")
-from experiments.siammask_sharp.custom import Custom
+from experiments.siammask_sharp import *
 
 from utils.log_helper import init_log, add_file_handler
 from utils.load_helper import load_pretrain
