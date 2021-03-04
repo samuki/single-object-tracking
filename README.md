@@ -23,7 +23,7 @@ conda install pip opencv pyqt
 pip install -r requirements.txt 
 bash make.sh 
 ```
-* [Download](https://www.a2d2.audi/a2d2/en/download.html) a subset of the A2D2
+* Download a [subset of the A2D2](https://www.a2d2.audi/a2d2/en/download.html)
 * Start the GUI 
 
 ```
