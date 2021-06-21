@@ -1,6 +1,6 @@
 # Single Object Tracking for Autonomous Driving
 
-In this project, I applied and evaluated Single Object Tracking by using the object tracking system [SiamMask](https://github.com/foolwood/SiamMask) on the Audi Autonomous Driving Dataset [A2D2](https://www.a2d2.audi/a2d2/en.html) and [KITTI](http://www.cvlibs.net/datasets/kitti/).  
+This project is about evaluating Single Object Tracking by applying the object tracker [SiamMask](https://github.com/foolwood/SiamMask) on the Audi Autonomous Driving Dataset [A2D2](https://www.a2d2.audi/a2d2/en.html) and [KITTI](http://www.cvlibs.net/datasets/kitti/).  
 The goal was to test, how applicable SiamMask to the task of tracking individual vehicles in those datasets without explicitly fine-tuning it.  
 For details see the whole [report](https://github.com/samuki/single-object-tracking/blob/main/Object_Tracking_Report.pdf)
 
